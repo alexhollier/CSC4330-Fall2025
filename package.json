@@ -1,0 +1,12 @@
+{
+  "dependencies": {
+    "expo": "^54.0.21",
+    "expo-router": "^6.0.14",
+    "react-native": "^0.82.1",
+    "react-native-web": "^0.21.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.1.10",
+    "typescript": "~5.9.2"
+  }
+}
