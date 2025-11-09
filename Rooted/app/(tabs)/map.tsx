@@ -1,16 +1,28 @@
-import { Text, View } from "react-native";
+import { GoogleMap, LoadScript } from "@react-google-maps/api";
+import { StyleSheet, View } from "react-native";
 
-export default function Index() {
+export default function MapPage() {
+  const center = {
+    lat: 30.4515,
+    lng: -91.1871,
+  };
+
+  const containerStyle = {
+    width: "100%",
+    height: "100%",
+  };
+
   return (
-    <View
-      style={{
-        flex: 1,
-        justifyContent: "center",
-        alignItems: "center",
-        backgroundColor: "white",
-      }}
-    >
-      <Text style={{ color: "black"}}>google map</Text>
+    <View style={styles.container}>
+      <LoadScript googleMapsApiKey={process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY!}>
+        <GoogleMap mapContainerStyle={containerStyle} center={center} zoom={13} />
+      </LoadScript>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+});
