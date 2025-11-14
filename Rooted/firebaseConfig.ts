@@ -15,8 +15,30 @@ const firebaseConfig = {
   measurementId: extra.FIREBASE_MEASUREMENT_ID as string,
 };
 
-if (!firebaseConfig.apiKey) {
-  console.warn('[firebaseConfig] No FIREBASE_API_KEY found. Check app.config.js and .env');
+// Validate all required Firebase config values
+const requiredFields = [
+  'apiKey',
+  'authDomain',
+  'projectId',
+  'storageBucket',
+  'messagingSenderId',
+  'appId',
+] as const;
+
+const missingFields = requiredFields.filter(
+  (field) => !firebaseConfig[field]
+);
+
+if (missingFields.length > 0) {
+  console.error(
+    '[firebaseConfig] Missing Firebase configuration:',
+    missingFields.join(', ')
+  );
+  console.error('[firebaseConfig] Check app.config.js and .env file');
+  console.error('[firebaseConfig] Extra config received:', extra);
+  throw new Error(
+    `Firebase configuration incomplete. Missing: ${missingFields.join(', ')}`
+  );
 }
 
 const app = initializeApp(firebaseConfig);

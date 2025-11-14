@@ -60,7 +60,6 @@ export default function TabsLayout() {
       
       tabBar={(props) => <CustomTabBar {...props} />}
       
-      
       screenOptions={{
         headerShown: false,
         tabBarStyle: { display: 'none' }, 
@@ -68,10 +67,10 @@ export default function TabsLayout() {
       }}
     >
 
+      <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
       <Tabs.Screen name="search" options={{ title: 'Search' }} />
       <Tabs.Screen name="map" options={{ title: 'Map' }} /> 
       <Tabs.Screen name="camera" options={{ title: 'Camera' }} />
-      <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
     </Tabs>
   );
 }
