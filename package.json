@@ -1,6 +1,8 @@
 {
   "dependencies": {
     "expo": "^54.0.21",
+    "expo-barcode-scanner": "^13.0.1",
+    "expo-camera": "~17.0.9",
     "expo-router": "^6.0.14",
     "react-native": "^0.82.1",
     "react-native-web": "^0.21.0"
