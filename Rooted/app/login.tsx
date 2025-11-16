@@ -9,7 +9,7 @@ export default function Login() {
       {/* Logo + Title */}
       <View style={styles.header}>
         <Image
-          source={require("../assets/logo.png")} // put logo.png in Rooted/assets
+          source={require("../assets/images/icon.png")} // put icon.png in Rooted/assets
           style={styles.logo}
         />
         <Text style={styles.title}>ROOTED</Text>
