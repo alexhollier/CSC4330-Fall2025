@@ -3,6 +3,7 @@
     "expo": "^54.0.21",
     "expo-router": "^6.0.14",
     "react-native": "^0.82.1",
+    "react-native-geocoding": "^0.5.0",
     "react-native-web": "^0.21.0"
   },
   "devDependencies": {

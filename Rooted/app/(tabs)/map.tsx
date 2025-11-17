@@ -1,5 +1,8 @@
 import { GoogleMap, LoadScript } from "@react-google-maps/api";
 import { StyleSheet, View } from "react-native";
+import Geocoder from 'react-native-geocoding';
+
+
 
 export default function MapPage() {
   const center = {
@@ -26,3 +29,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 });
+
+const mapStyle = [
+  {
+    featureType: 'poi',
+    elementType: 'all',
+    stylers: [{ visibility: 'off' }],
+  },
+];
+
