@@ -10,7 +10,7 @@ function RootLayoutContent() {
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       </Stack>
-      <AuthModal visible={!user && !loading} onClose={() => {}} />
+      <AuthModal visible={!user} onClose={() => {}} />
     </>
   );
 }

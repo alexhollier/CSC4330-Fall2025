@@ -1,14 +1,5 @@
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Modal,
-  Alert,
-  ActivityIndicator,
-} from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Alert, ActivityIndicator, } from 'react-native';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth';
 import { auth } from '../firebaseConfig';
 
@@ -18,7 +9,14 @@ interface AuthModalProps {
 }
 
 export default function AuthModal({ visible, onClose }: AuthModalProps) {
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      console.log(`User is ${user ? 'signed in' : 'not signed in'} and modal is ${visible ? 'present' : 'not present'}`);
+    });
+    return unsubscribe;
+  }, [visible]);
   const [isSignUp, setIsSignUp] = useState(false);
+  const [showSignUpModal, setShowSignUpModal] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -152,8 +150,12 @@ export default function AuthModal({ visible, onClose }: AuthModalProps) {
 
           <TouchableOpacity
             onPress={() => {
-              setIsSignUp(!isSignUp);
-              resetForm();
+              if (!isSignUp) {
+                setShowSignUpModal(true);
+              } else {
+                setIsSignUp(false);
+                resetForm();
+              }
             }}
             disabled={loading}
           >
@@ -162,6 +164,148 @@ export default function AuthModal({ visible, onClose }: AuthModalProps) {
                 ? 'Already have an account? Sign In'
                 : "Don't have an account? Sign Up"}
             </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+      <SignUpModal 
+        visible={showSignUpModal} 
+        onClose={() => setShowSignUpModal(false)}
+        onBackToLogin={() => {
+          setShowSignUpModal(false);
+          resetForm();
+        }}
+      />
+    </Modal>
+  );
+}
+
+interface SignUpModalProps {
+  visible: boolean;
+  onClose: () => void;
+  onBackToLogin: () => void;
+}
+
+function SignUpModal({ visible, onClose, onBackToLogin }: SignUpModalProps) {
+  const [signUpEmail, setSignUpEmail] = useState('');
+  const [signUpPassword, setSignUpPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleCreateAccount = async () => {
+    if (!signUpEmail || !signUpPassword || !confirmPassword) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(signUpEmail)) {
+      Alert.alert('Error', 'Please enter a valid email address');
+      return;
+    }
+
+    if (signUpPassword !== confirmPassword) {
+      Alert.alert('Error', 'Passwords do not match');
+      return;
+    }
+
+    if (signUpPassword.length < 6) {
+      Alert.alert('Error', 'Password must be at least 6 characters');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, signUpEmail, signUpPassword);
+      
+      // Send verification email
+      await sendEmailVerification(userCredential.user);
+      
+      Alert.alert(
+        'Sign Up Link Sent!',
+        `A sign-up link has been sent to ${signUpEmail}. Please check your inbox and verify your email to complete your registration.`,
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              setSignUpEmail('');
+              setSignUpPassword('');
+              setConfirmPassword('');
+              onClose();
+            },
+          },
+        ]
+      );
+    } catch (error: any) {
+      console.error('Sign up error code:', error.code);
+      console.error('Sign up error message:', error.message);
+      
+      if (error.code === 'auth/email-already-in-use') {
+        Alert.alert('Email Already Registered', 'This email is already registered. Please sign in instead.');
+      } else if (error.code === 'auth/invalid-email') {
+        Alert.alert('Invalid Email', 'Please enter a valid email address.');
+      } else if (error.code === 'auth/weak-password') {
+        Alert.alert('Weak Password', 'Password should be at least 6 characters.');
+      } else {
+        Alert.alert('Sign Up Failed', error.message || 'An unknown error occurred');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade">
+      <View style={styles.overlay}>
+        <View style={styles.modalContent}>
+          <Text style={styles.title}>Create Account</Text>
+          <Text style={styles.subtitle}>Sign up to get started</Text>
+
+          <TextInput
+            style={styles.input}
+            placeholder="Email"
+            autoCapitalize="none"
+            keyboardType="email-address"
+            value={signUpEmail}
+            onChangeText={setSignUpEmail}
+            editable={!loading}
+          />
+
+          <TextInput
+            style={styles.input}
+            placeholder="Password"
+            secureTextEntry
+            value={signUpPassword}
+            onChangeText={setSignUpPassword}
+            editable={!loading}
+          />
+
+          <TextInput
+            style={styles.input}
+            placeholder="Confirm Password"
+            secureTextEntry
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+            editable={!loading}
+          />
+
+          <TouchableOpacity
+            style={[styles.button, loading && styles.buttonDisabled]}
+            onPress={handleCreateAccount}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="white" />
+            ) : (
+              <Text style={styles.buttonText}>Create Account</Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={onBackToLogin}
+            disabled={loading}
+          >
+            <Text style={styles.toggleText}>Back to Sign In</Text>
           </TouchableOpacity>
         </View>
       </View>

@@ -14,12 +14,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    console.log('[AuthContext] Starting auth state check');
+    const startTime = Date.now();
+    
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      const elapsed = Date.now() - startTime;
+      console.log(`[AuthContext] Auth state received in ${elapsed}ms, user: ${currentUser ? 'signed in' : 'not signed in'}`);
       setUser(currentUser);
       setLoading(false);
     });
 
-    return unsubscribe;
+    // Timeout fallback: force loading to false after 5 seconds to prevent indefinite loading
+    const timeoutId = setTimeout(() => {
+      console.log('[AuthContext] Auth check timeout - forcing loading to false');
+      setLoading(false);
+    }, 5000);
+
+    return () => {
+      clearTimeout(timeoutId);
+      unsubscribe();
+    };
   }, []);
 
   return (
