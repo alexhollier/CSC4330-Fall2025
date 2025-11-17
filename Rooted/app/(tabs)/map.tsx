@@ -1,22 +1,22 @@
-import { GoogleMap, LoadScript } from "@react-google-maps/api";
+import MapView, { Marker } from "react-native-maps";
 import { StyleSheet, View } from "react-native";
 
 export default function MapPage() {
   const center = {
-    lat: 30.4515,
-    lng: -91.1871,
-  };
-
-  const containerStyle = {
-    width: "100%",
-    height: "100%",
+    latitude: 30.4515,
+    longitude: -91.1871,
   };
 
   return (
     <View style={styles.container}>
-      <LoadScript googleMapsApiKey={process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY!}>
-        <GoogleMap mapContainerStyle={containerStyle} center={center} zoom={13} />
-      </LoadScript>
+      <MapView
+        style={StyleSheet.absoluteFillObject}
+        initialRegion={{
+          ...center,
+          latitudeDelta: 0.0922,
+          longitudeDelta: 0.0421,
+        }}
+      />
     </View>
   );
 }
