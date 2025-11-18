@@ -1,3 +1,4 @@
+import React from 'react';
 import { Tabs, useRouter } from 'expo-router';
 import { View, Pressable, StyleSheet } from 'react-native';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
