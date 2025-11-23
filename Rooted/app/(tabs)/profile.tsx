@@ -4,29 +4,17 @@ import Logo from "react-native-vector-icons/MaterialCommunityIcons";
 import MaterialIcon from "react-native-vector-icons/MaterialIcons";
 import AntDesignIcon from "react-native-vector-icons/AntDesign";
 import { signOut } from "firebase/auth";
-import { auth } from "../../firebaseConfig";
+import { auth, db } from "../../firebaseConfig";
+import { useEffect, useState } from "react";
+import { doc, getDoc } from "firebase/firestore";
 
-const userData = {
-  name: "John Doe",
-  hoursCompleted: 15,
+const defaultUserData = {
+  name: "User",
+  hoursCompleted: 0,
   hoursGoal: 30,
-  upcomingEvents: [
-    'Science Fair - March 15',
-    'Math Olympiad - April 10',
-    'Art Exhibition - May 5',
-  ],
-
-  recommendedActivities: [
-    '5th Grade Tutoring',
-    'Science Fair',
-    'Community Gardening',
-  ],
-
-  organizations: [
-    {name: "EDA", hours: "5/10"},
-    {name: "NSBE", hours: "5/10"},
-    {name: "SASE", hours: "5/10"}
-  ]
+  upcomingEvents: [],
+  recommendedActivities: [],
+  organizations: []
 };
 
 const COLORS = {
@@ -212,6 +200,59 @@ const styles = StyleSheet.create({
 });
 
 export default function Index() {
+  const [userData, setUserData] = useState(defaultUserData);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        const currentUser = auth.currentUser;
+        if (!currentUser) {
+          console.warn('No authenticated user found');
+          setLoading(false);
+          return;
+        }
+
+        const userDocRef = doc(db, 'UserInformation', currentUser.uid);
+        const userDocSnap = await getDoc(userDocRef);
+
+        if (userDocSnap.exists()) {
+          const data = userDocSnap.data();
+          
+          // Parse organizations from "Name: Hours" format
+          const rawOrganizations = data.Organizations || [];
+          const parsedOrganizations = rawOrganizations.map((org: string) => {
+            const parts = org.split(':').map((part: string) => part.trim());
+            return {
+              name: parts[0] || '',
+              hours: parts[1] || '0/0',
+            };
+          });
+          
+          setUserData({
+            name: data.name || 'User',
+            hoursCompleted: data.hoursCompleted || 0,
+            hoursGoal: data.hoursGoal || 30,
+            upcomingEvents: data.upcomingEvents || [],
+            recommendedActivities: data.recommendedActivities || [],
+            organizations: parsedOrganizations,
+          });
+          console.log('User data loaded successfully:', data);
+        } else {
+          console.warn('No user document found in UserInformation collection');
+          setUserData(defaultUserData);
+        }
+      } catch (error) {
+        console.error('Error fetching user data:', error);
+        setUserData(defaultUserData);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUserData();
+  }, []);
+
   const progressPercentage = (userData.hoursCompleted / userData.hoursGoal) * 100;
 
   const handleSignOut = async () => {
@@ -282,7 +323,7 @@ export default function Index() {
           {/* Upcoming Card */}
           <View style={[styles.baseCard, styles.upcomingCard]}>
             <Text style={[styles.cardTitle, { color: COLORS.textDark }]}>Upcoming:</Text>
-            {userData.upcomingEvents.map((event, index) => (
+            {userData.upcomingEvents.map((event: any, index: number) => (
               <Text key={index} style={styles.cardText}>{event}</Text>
             ))}
           </View>
@@ -290,7 +331,7 @@ export default function Index() {
           {/* Recommended Card (Taller/Wider) */}
           <View style={[styles.baseCard, styles.recommendedCard]}>
             <Text style={[styles.cardTitle, { color: COLORS.textDark }]}>Recommended:</Text>
-            {userData.recommendedActivities.map((activity, index) => (
+            {userData.recommendedActivities.map((activity: any, index: number) => (
               <Text key={index} style={styles.cardText}>{activity}</Text>
             ))}
           </View>
@@ -299,7 +340,7 @@ export default function Index() {
         {/* D. Organizations Card */}
         <View style={[styles.baseCard, styles.organizationsCard]}>
           <Text style={[styles.cardTitle, styles.orgText]}>Organizations:</Text>
-          {userData.organizations.map((org, index) => (
+          {userData.organizations.map((org: any, index: number) => (
             <Text key={index} style={styles.orgText}>{org.name} = {org.hours} Hours</Text>
           ))}
         </View>
