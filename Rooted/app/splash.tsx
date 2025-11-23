@@ -1,20 +1,51 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+// app/index.tsx
+import React, { useEffect } from 'react';
+import { View, Text, Image, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useAuth } from '../contexts/AuthContext';
+
+const { width, height } = Dimensions.get('window');
 
 export default function SplashScreen() {
   const router = useRouter();
+  const { user, loading } = useAuth();
+
+  // Show nothing while checking auth state
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.loadingText}>Loading...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Welcome to Rooted</Text>
-      <Text style={styles.subtitle}>Sign in or create an account to continue</Text>
-      <TouchableOpacity style={styles.button} onPress={() => router.push('/auth/signin')}>
-        <Text style={styles.buttonText}>Sign In</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.buttonOutline} onPress={() => router.push('/auth/signup')}>
-        <Text style={styles.buttonOutlineText}>Create Account</Text>
-      </TouchableOpacity>
+      {/* Logo */}
+      <View style={styles.logoContainer}>
+        <Image 
+          source={require('../assets/images/rooted_logo.png')}
+          style={styles.logo}
+          resizeMode="contain"
+        />
+      </View>
+
+      {/* Buttons Container */}
+      <View style={styles.buttonsContainer}>
+        <TouchableOpacity 
+          style={styles.signInButton}
+          onPress={() => router.push('/auth/signin')}
+        >
+          <Text style={styles.signInButtonText}>Sign In</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={styles.signUpButton}
+          onPress={() => router.push('/auth/signup')}
+        >
+          <Text style={styles.signUpButtonText}>Sign Up</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -22,43 +53,65 @@ export default function SplashScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#fcfaf0',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    paddingVertical: 60,
+  },
+  logoContainer: {
+    flex: 1,
     justifyContent: 'center',
-    backgroundColor: '#E6F4FE',
-    padding: 24,
+    alignItems: 'center',
+    width: '100%',
   },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    marginBottom: 16,
-    color: '#1A3C40',
+  logo: {
+    width: width * 0.6,
+    height: height * 0.3,
+    maxWidth: 300,
+    maxHeight: 300,
   },
-  subtitle: {
+  loadingText: {
     fontSize: 18,
-    marginBottom: 32,
-    color: '#1A3C40',
+    color: '#4d7c0f',
+    fontWeight: '600',
   },
-  button: {
-    backgroundColor: '#1A3C40',
-    paddingVertical: 14,
-    paddingHorizontal: 48,
-    borderRadius: 8,
-    marginBottom: 16,
+  buttonsContainer: {
+    width: '100%',
+    paddingHorizontal: 40,
+    gap: 15,
+    marginBottom: 40,
   },
-  buttonText: {
-    color: '#fff',
+  signInButton: {
+    backgroundColor: '#4d7c0f',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  signInButtonText: {
+    color: '#ffffff',
     fontSize: 18,
     fontWeight: 'bold',
   },
-  buttonOutline: {
-    borderColor: '#1A3C40',
+  signUpButton: {
+    backgroundColor: '#ffffff',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
     borderWidth: 2,
-    paddingVertical: 14,
-    paddingHorizontal: 48,
-    borderRadius: 8,
+    borderColor: '#4d7c0f',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  buttonOutlineText: {
-    color: '#1A3C40',
+  signUpButtonText: {
+    color: '#4d7c0f',
     fontSize: 18,
     fontWeight: 'bold',
   },

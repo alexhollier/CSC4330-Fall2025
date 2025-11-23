@@ -1,8 +1,10 @@
-import { Text, View, ScrollView, StyleSheet, SafeAreaView, Dimensions } from "react-native";
+import { Text, View, ScrollView, StyleSheet, SafeAreaView, Dimensions, TouchableOpacity, Alert } from "react-native";
 import Icon from "react-native-vector-icons/Ionicons";
 import Logo from "react-native-vector-icons/MaterialCommunityIcons";
 import MaterialIcon from "react-native-vector-icons/MaterialIcons";
 import AntDesignIcon from "react-native-vector-icons/AntDesign";
+import { signOut } from "firebase/auth";
+import { auth } from "../../firebaseConfig";
 
 const userData = {
   name: "John Doe",
@@ -37,6 +39,8 @@ const COLORS = {
   progressBarEmpty: '#d1d1d1',
   textDark: '#000000',
   textLight: '#ffffff',
+  signOutButton: '#ff6347',
+  editButton: '#4d7c0f',
 }
 const { width } = Dimensions.get('window');
 
@@ -162,15 +166,83 @@ const styles = StyleSheet.create({
     minHeight: 150,
   },
   orgText: {
-    color: 'white', // Text inside the green card should be light
+    color: 'white',
     lineHeight: 24,
   },
 
-  
+  // Action Buttons Section
+  actionButtonsContainer: {
+    marginTop: 20,
+    gap: 12,
+    marginBottom: 20,
+  },
+  signOutButton: {
+    backgroundColor: COLORS.signOutButton,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    shadowColor: COLORS.textDark,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  editProfileButton: {
+    backgroundColor: COLORS.editButton,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    shadowColor: COLORS.textDark,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  buttonText: {
+    color: COLORS.textLight,
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
 });
 
 export default function Index() {
   const progressPercentage = (userData.hoursCompleted / userData.hoursGoal) * 100;
+
+  const handleSignOut = async () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Sign Out',
+          onPress: async () => {
+            try {
+              await signOut(auth);
+              console.log('User signed out successfully');
+            } catch (error) {
+              console.error('Error signing out:', error);
+              Alert.alert('Error', 'Failed to sign out. Please try again.');
+            }
+          },
+          style: 'destructive',
+        },
+      ]
+    );
+  };
+
+  const handleEditProfile = () => {
+    Alert.alert('Edit Profile', 'Edit profile functionality coming soon!');
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -232,11 +304,28 @@ export default function Index() {
           ))}
         </View>
 
+        {/* E. Action Buttons */}
+        <View style={styles.actionButtonsContainer}>
+          {/* Sign Out Button */}
+          <TouchableOpacity 
+            style={styles.signOutButton}
+            onPress={handleSignOut}
+          >
+            <MaterialIcon name="logout" size={20} color={COLORS.textLight} />
+            <Text style={styles.buttonText}>Sign Out</Text>
+          </TouchableOpacity>
+
+          {/* Edit Profile Button */}
+          <TouchableOpacity 
+            style={styles.editProfileButton}
+            onPress={handleEditProfile}
+          >
+            <MaterialIcon name="edit" size={20} color={COLORS.textLight} />
+            <Text style={styles.buttonText}>Edit Profile</Text>
+          </TouchableOpacity>
+        </View>
 
       </ScrollView>
-      
-      
-
     </SafeAreaView>
   );
 }

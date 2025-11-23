@@ -19,7 +19,7 @@ const CustomTabBar = ({ state }: BottomTabBarProps) => {
   const focusedRouteName = state.routes[state.index].name;
 
   const tabs = [
-    { name: 'search', icon: <AntDesign name="search1" style={styles.navIcon} /> },
+    { name: 'search', icon: <Ionicons name="search" style={styles.navIcon} /> },
     { name: 'map', icon: <Ionicons name="map-outline" style={styles.navIcon} /> }, 
     { name: 'camera', icon: <MaterialIcons name="photo-camera" style={styles.navIcon} /> },
     { name: 'profile', icon: <MaterialIcons name="person" style={styles.navIcon} /> }, 
@@ -27,7 +27,7 @@ const CustomTabBar = ({ state }: BottomTabBarProps) => {
 
   const NavIcon = ({ icon, active, name }: { icon: JSX.Element, active: boolean, name: string }) => {
     const handlePress = () => {
-        router.push(`/${name}`);
+        router.push(`/(tabs)/${name}`);
     };
 
     return (

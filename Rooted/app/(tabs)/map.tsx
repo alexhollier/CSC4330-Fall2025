@@ -65,6 +65,7 @@ export default function MapPage() {
             }}
           >
             <Callout
+            tooltip={true}
               onPress={() => {
                 const lat = item.location.latitude;
                 const lng = item.location.longitude;
@@ -73,18 +74,25 @@ export default function MapPage() {
                 Linking.openURL(url);
               }}
             >
-              <View style={{ padding: 10, maxWidth: 200 }}>
-                <Text style={{ fontWeight: "bold", fontSize: 16, marginBottom: 8 }}>
-                  {item.business}
-                </Text>
-                <Text style={{  fontSize: 12 }}>
-                  {item.description}
-                </Text>
+              <View style={{
+  backgroundColor: "white",
+  padding: 10,
+  borderRadius: 8,
+  maxWidth: 250,
+  elevation: 4
+}}>
+  <Text style={{ fontWeight: "bold", fontSize: 16, marginBottom: 8 }}>
+    {item.business}
+  </Text>
+  <Text style={{ fontSize: 12, marginBottom: 8 }}>
+    {item.description}
+  </Text>
 
-                <Text style={{ marginTop: 8, color: "blue" }}>
-                  Get Directions →
-                </Text>
-              </View>
+  <Text style={{ color: "blue", fontWeight: "600" }}>
+    Get Directions →
+  </Text>
+</View>
+
             </Callout>
           </Marker>
         ))}
