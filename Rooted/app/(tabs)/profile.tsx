@@ -1,20 +1,20 @@
-import { Text, View, ScrollView, StyleSheet, SafeAreaView, Dimensions, TouchableOpacity, Alert } from "react-native";
+import { Text, View, ScrollView, StyleSheet, SafeAreaView, Dimensions, TouchableOpacity, Alert, Modal, TextInput, FlatList } from "react-native";
 import Icon from "react-native-vector-icons/Ionicons";
 import Logo from "react-native-vector-icons/MaterialCommunityIcons";
 import MaterialIcon from "react-native-vector-icons/MaterialIcons";
 import AntDesignIcon from "react-native-vector-icons/AntDesign";
-import { signOut } from "firebase/auth";
+import { signOut, sendPasswordResetEmail } from "firebase/auth";
 import { auth, db } from "../../firebaseConfig";
 import { useEffect, useState } from "react";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
 
 const defaultUserData = {
   name: "User",
   hoursCompleted: 0,
   hoursGoal: 30,
-  upcomingEvents: [],
-  recommendedActivities: [],
-  organizations: []
+  upcomingEvents: [] as string[],
+  recommendedActivities: [] as string[],
+  organizations: [] as Array<{name: string, hours: string}>
 };
 
 const COLORS = {
@@ -197,11 +197,129 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
+
+  // Edit Profile Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: COLORS.background,
+    borderRadius: 20,
+    padding: 20,
+    maxHeight: '90%',
+    maxWidth: '90%',
+    width: 300,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.darkGreen,
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  textInput: {
+    borderWidth: 1,
+    borderColor: COLORS.darkGreen,
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
+    color: COLORS.textDark,
+    fontSize: 14,
+  },
+  orgRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  orgNameInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: COLORS.darkGreen,
+    borderRadius: 8,
+    padding: 8,
+    marginRight: 8,
+    color: COLORS.textDark,
+  },
+  orgHoursInput: {
+    flex: 0.7,
+    borderWidth: 1,
+    borderColor: COLORS.darkGreen,
+    borderRadius: 8,
+    padding: 8,
+    marginRight: 8,
+    color: COLORS.textDark,
+  },
+  deleteOrgButton: {
+    backgroundColor: '#ff6347',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  addOrgButton: {
+    backgroundColor: COLORS.darkGreen,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginBottom: 12,
+    alignItems: 'center',
+  },
+  addOrgText: {
+    color: COLORS.textLight,
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  modalButtonRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 15,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  saveButton: {
+    backgroundColor: COLORS.darkGreen,
+  },
+  cancelButton: {
+    backgroundColor: '#ccc',
+  },
+  modalButtonText: {
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  optionButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 15,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 8,
+    marginBottom: 10,
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.darkGreen,
+  },
+  optionButtonText: {
+    fontSize: 16,
+    color: COLORS.textDark,
+    fontWeight: '500',
+  },
 });
 
 export default function Index() {
   const [userData, setUserData] = useState(defaultUserData);
   const [loading, setLoading] = useState(true);
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editOption, setEditOption] = useState<'name' | 'organizations' | 'password' | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editOrganizations, setEditOrganizations] = useState<Array<{name: string, hours: string}>>([]);
+  const [newOrgName, setNewOrgName] = useState('');
+  const [newOrgHours, setNewOrgHours] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -282,7 +400,99 @@ export default function Index() {
   };
 
   const handleEditProfile = () => {
-    Alert.alert('Edit Profile', 'Edit profile functionality coming soon!');
+    setEditOption(null);
+    setEditModalVisible(true);
+  };
+
+  const openEditOption = (option: 'name' | 'organizations' | 'password') => {
+    setEditOption(option);
+    if (option === 'name') {
+      setEditName(userData.name);
+    } else if (option === 'organizations') {
+      setEditOrganizations([...userData.organizations]);
+      setNewOrgName('');
+      setNewOrgHours('');
+    }
+  };
+
+  const addOrganization = () => {
+    if (newOrgName.trim() && newOrgHours.trim()) {
+      setEditOrganizations([...editOrganizations, { name: newOrgName, hours: newOrgHours }]);
+      setNewOrgName('');
+      setNewOrgHours('');
+    } else {
+      Alert.alert('Error', 'Please enter both organization name and hours');
+    }
+  };
+
+  const removeOrganization = (index: number) => {
+    setEditOrganizations(editOrganizations.filter((_, i) => i !== index));
+  };
+
+  const updateOrganization = (index: number, field: 'name' | 'hours', value: string) => {
+    const updated = [...editOrganizations];
+    updated[index][field] = value;
+    setEditOrganizations(updated);
+  };
+
+  const saveName = async () => {
+    if (!editName.trim()) {
+      Alert.alert('Error', 'Name cannot be empty');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        const userDocRef = doc(db, 'UserInformation', currentUser.uid);
+        await updateDoc(userDocRef, { name: editName });
+        setUserData({ ...userData, name: editName });
+        Alert.alert('Success', 'Name updated successfully');
+        setEditModalVisible(false);
+      }
+    } catch (error) {
+      console.error('Error updating name:', error);
+      Alert.alert('Error', 'Failed to update name. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveOrganizations = async () => {
+    setSaving(true);
+    try {
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        // Convert organizations back to "Name: Hours" format
+        const orgStrings = editOrganizations.map(org => `${org.name}: ${org.hours}`);
+        
+        const userDocRef = doc(db, 'UserInformation', currentUser.uid);
+        await updateDoc(userDocRef, { Organizations: orgStrings });
+        setUserData({ ...userData, organizations: editOrganizations });
+        Alert.alert('Success', 'Organizations updated successfully');
+        setEditModalVisible(false);
+      }
+    } catch (error) {
+      console.error('Error updating organizations:', error);
+      Alert.alert('Error', 'Failed to update organizations. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const sendPasswordReset = async () => {
+    try {
+      const currentUser = auth.currentUser;
+      if (currentUser?.email) {
+        await sendPasswordResetEmail(auth, currentUser.email);
+        Alert.alert('Success', 'Password reset email sent to ' + currentUser.email);
+        setEditModalVisible(false);
+      }
+    } catch (error) {
+      console.error('Error sending password reset:', error);
+      Alert.alert('Error', 'Failed to send password reset email. Please try again.');
+    }
   };
 
   return (
@@ -367,6 +577,179 @@ export default function Index() {
         </View>
 
       </ScrollView>
+
+      {/* Edit Profile Modal */}
+      <Modal
+        visible={editModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEditModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            {!editOption ? (
+              // Main menu
+              <>
+                <Text style={styles.modalTitle}>Edit Profile</Text>
+                
+                <TouchableOpacity
+                  style={styles.optionButton}
+                  onPress={() => openEditOption('name')}
+                >
+                  <Text style={styles.optionButtonText}>Change Name</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.optionButton}
+                  onPress={() => openEditOption('organizations')}
+                >
+                  <Text style={styles.optionButtonText}>Manage Organizations</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.optionButton}
+                  onPress={() => openEditOption('password')}
+                >
+                  <Text style={styles.optionButtonText}>Reset Password</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.cancelButton]}
+                  onPress={() => setEditModalVisible(false)}
+                >
+                  <Text style={[styles.modalButtonText, { color: COLORS.textDark }]}>Close</Text>
+                </TouchableOpacity>
+              </>
+            ) : editOption === 'name' ? (
+              // Edit name
+              <>
+                <Text style={styles.modalTitle}>Change Name</Text>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Enter new name"
+                  value={editName}
+                  onChangeText={setEditName}
+                  placeholderTextColor="#999"
+                />
+                <View style={styles.modalButtonRow}>
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.saveButton]}
+                    onPress={saveName}
+                    disabled={saving}
+                  >
+                    <Text style={[styles.modalButtonText, { color: COLORS.textLight }]}>
+                      {saving ? 'Saving...' : 'Save'}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.cancelButton]}
+                    onPress={() => setEditOption(null)}
+                  >
+                    <Text style={[styles.modalButtonText, { color: COLORS.textDark }]}>Back</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : editOption === 'organizations' ? (
+              // Edit organizations
+              <>
+                <Text style={styles.modalTitle}>Manage Organizations</Text>
+                
+                {/* Add new organization */}
+                <View>
+                  <TextInput
+                    style={styles.orgNameInput}
+                    placeholder="Organization name"
+                    value={newOrgName}
+                    onChangeText={setNewOrgName}
+                    placeholderTextColor="#999"
+                  />
+                  <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+                    <TextInput
+                      style={styles.orgHoursInput}
+                      placeholder="Hours (e.g. 5/10)"
+                      value={newOrgHours}
+                      onChangeText={setNewOrgHours}
+                      placeholderTextColor="#999"
+                    />
+                    <TouchableOpacity
+                      style={styles.addOrgButton}
+                      onPress={addOrganization}
+                    >
+                      <Text style={styles.addOrgText}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* List existing organizations */}
+                <ScrollView style={{ maxHeight: 150, marginBottom: 12 }}>
+                  {editOrganizations.map((org, index) => (
+                    <View key={index} style={styles.orgRow}>
+                      <TextInput
+                        style={styles.orgNameInput}
+                        value={org.name}
+                        onChangeText={(value) => updateOrganization(index, 'name', value)}
+                        placeholderTextColor="#999"
+                      />
+                      <TextInput
+                        style={styles.orgHoursInput}
+                        value={org.hours}
+                        onChangeText={(value) => updateOrganization(index, 'hours', value)}
+                        placeholderTextColor="#999"
+                      />
+                      <TouchableOpacity
+                        style={styles.deleteOrgButton}
+                        onPress={() => removeOrganization(index)}
+                      >
+                        <MaterialIcon name="delete" size={18} color={COLORS.textLight} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </ScrollView>
+
+                <View style={styles.modalButtonRow}>
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.saveButton]}
+                    onPress={saveOrganizations}
+                    disabled={saving}
+                  >
+                    <Text style={[styles.modalButtonText, { color: COLORS.textLight }]}>
+                      {saving ? 'Saving...' : 'Save'}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.cancelButton]}
+                    onPress={() => setEditOption(null)}
+                  >
+                    <Text style={[styles.modalButtonText, { color: COLORS.textDark }]}>Back</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : editOption === 'password' ? (
+              // Password reset
+              <>
+                <Text style={styles.modalTitle}>Reset Password</Text>
+                <Text style={{ fontSize: 14, color: COLORS.textDark, marginBottom: 15, textAlign: 'center' }}>
+                  A password reset email will be sent to your email address.
+                </Text>
+                <View style={styles.modalButtonRow}>
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.saveButton]}
+                    onPress={sendPasswordReset}
+                  >
+                    <Text style={[styles.modalButtonText, { color: COLORS.textLight }]}>Send Email</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.cancelButton]}
+                    onPress={() => setEditOption(null)}
+                  >
+                    <Text style={[styles.modalButtonText, { color: COLORS.textDark }]}>Back</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : null}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
