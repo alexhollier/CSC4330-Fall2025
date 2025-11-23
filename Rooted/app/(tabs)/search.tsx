@@ -1,63 +1,79 @@
 import React, { useEffect, useState } from 'react';
-import { Text, View, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity } from 'react-native';
+import {
+  Text,
+  View,
+  StyleSheet,
+  ScrollView,
+  SafeAreaView,
+  TouchableOpacity,
+  ActivityIndicator,
+} from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import AntDesign from 'react-native-vector-icons/AntDesign';
 import { Slider } from '@miblanchard/react-native-slider';
+import { collection, onSnapshot } from 'firebase/firestore';
+import { db } from '../../firebaseConfig';
+import * as Location from 'expo-location';
 
 const COLORS = {
-  background: '#fcfaf0', 
-  darkGreen: '#4d7c0f', 
-  lightGreen: '#709d43', 
-  card: '#e0c9b0', 
+  background: '#fcfaf0',
+  darkGreen: '#4d7c0f',
+  lightGreen: '#709d43',
+  card: '#e0c9b0',
   textDark: '#000000',
   textLight: '#ffffff',
-  timeFilter: '#d1d1d1', 
+  timeFilter: '#d1d1d1',
 };
 
-const volunteerOpportunities = [
-  {
-    id: 1,
-    title: 'Baton Rouge Food Bank',
-    description: 'Help sort and distribute food',
-    distance: 2.1,
-    time: ['Morning', 'Afternoon'],
-  },
-  {
-    id: 2,
-    title: 'Habitat For Humanity',
-    description: 'Assist with home construction',
-    distance: 3.4,
-    time: ['Afternoon'],
-  },
-  {
-    id: 3,
-    title: 'Baton Rouge Green',
-    description: 'Plant and maintain trees',
-    distance: 4.2,
-    time: ['Morning'],
-  },
-  {
-    id: 4,
-    title: 'Library Story Hour',
-    description: 'Read to children in the evening',
-    distance: 0.8,
-    time: ['Evening'],
-  },
-  {
-    id: 5,
-    title: 'Animal Shelter Walkers',
-    description: 'Walk dogs in the late afternoon',
-    distance: 6.5,
-    time: ['Afternoon'],
-  },
-];
+export type Opportunity = {
+  id: string;
+  title: string;
+  description: string;
+  email?: string;
+  phone?: string;
+  fax?: string;
+  website?: string;
+  location?: {
+    latitude: number;
+    longitude: number;
+  };
+  distance?: number; // computed
+};
 
-//Logo and Menu Header Component
+// Haversine distance in miles
+function haversineMiles(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number {
+  const toRad = (x: number) => (x * Math.PI) / 180;
+
+  const R = 6371; // Earth radius in km
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const distanceKm = R * c;
+  const distanceMiles = distanceKm * 0.621371;
+
+  return distanceMiles;
+}
+
 const Header = () => (
   <View style={styles.header}>
     <View style={styles.logoContainer}>
-      <MaterialCommunityIcons name="tree-outline" size={35} color={COLORS.darkGreen} />
+      <MaterialCommunityIcons
+        name="tree-outline"
+        size={35}
+        color={COLORS.darkGreen}
+      />
       <View>
         <Text style={styles.logoText}>ROOTED</Text>
         <Text style={styles.subLogoText}>VOLUNTEER & COMMUNITY</Text>
@@ -69,70 +85,160 @@ const Header = () => (
   </View>
 );
 
-//Card Component for Volunteer Opportunities
-const OpportunityCard = ({ title, description, distance, time }: typeof volunteerOpportunities[0]) => (
-  <View style={[styles.card, { backgroundColor: COLORS.card }]}>
-    <MaterialCommunityIcons name="leaf" size={40} color={COLORS.lightGreen} style={styles.leafIcon} />
-    <View style={styles.cardContent}>
-      <Text style={styles.cardTitle}>{title}</Text>
-      <Text style={styles.cardDescription}>{description}</Text>
-      <View style={styles.cardFooter}>
-        <Text style={styles.cardDetail}>{distance} mi • {time.join('/')}</Text>
-        <TouchableOpacity style={styles.signUpButton}>
-          <Text style={styles.signUpButtonText}>Sign Up</Text>
-        </TouchableOpacity>
+const OpportunityCard = ({
+  title,
+  description,
+  distance,
+  email,
+  phone,
+  website,
+}: Opportunity) => {
+  const distanceText =
+    distance != null ? `${distance.toFixed(1)} mi away` : 'Distance unavailable';
+
+  return (
+    <View style={[styles.card, { backgroundColor: COLORS.card }]}>
+      <MaterialCommunityIcons
+        name="leaf"
+        size={40}
+        color={COLORS.lightGreen}
+        style={styles.leafIcon}
+      />
+      <View style={styles.cardContent}>
+        <Text style={styles.cardTitle}>{title}</Text>
+        <Text style={styles.cardDescription}>{description}</Text>
+
+        {phone ? <Text style={styles.cardDetail}>Phone: {phone}</Text> : null}
+        {email ? <Text style={styles.cardDetail}>Email: {email}</Text> : null}
+        {website ? (
+          <Text style={styles.cardDetail} numberOfLines={1}>
+            Website: {website}
+          </Text>
+        ) : null}
+
+        <View style={styles.cardFooter}>
+          <Text style={styles.cardDetail}>{distanceText}</Text>
+          <TouchableOpacity style={styles.signUpButton}>
+            <Text style={styles.signUpButtonText}>Sign Up</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
-  </View>
-);
+  );
+};
 
 export default function SearchScreen() {
-  // State for the distance slider
-  const [distanceValue, setDistanceValue] = React.useState([5]);
+  const [distanceValue, setDistanceValue] = React.useState([5]); // miles
   const maxDistance = distanceValue[0];
-  const [activeTime, setActiveTime] = React.useState('Morning');
 
-  const filteredOpportunities = volunteerOpportunities.filter((opportunity => {
-    const distanceMatch = opportunity.distance <= maxDistance;
-    const timeMatch = opportunity.time.includes(activeTime);
-    return distanceMatch && timeMatch;
-  }));
+  const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Helper component for time filter buttons
-  const TimeFilter = ({ label }: { label: string }) => (
-    <TouchableOpacity 
-      style={[
-        styles.timeFilterButton, 
-        { backgroundColor: activeTime === label ? COLORS.lightGreen : COLORS.timeFilter }
-      ]}
-      onPress={() => setActiveTime(label)}
-    >
-      <Text style={styles.timeFilterText}>{label}</Text>
-    </TouchableOpacity>
-  );
+  const [userLocation, setUserLocation] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
+
+  // Get Firestore opportunities
+  useEffect(() => {
+    const colRef = collection(db, 'VolunteerOpportunity');
+
+    const unsubscribe = onSnapshot(
+      colRef,
+      (snapshot) => {
+        const data: Opportunity[] = snapshot.docs.map((doc) => {
+          const raw = doc.data() as any;
+
+          const location =
+            raw.Location &&
+            typeof raw.Location.latitude === 'number' &&
+            typeof raw.Location.longitude === 'number'
+              ? {
+                  latitude: raw.Location.latitude,
+                  longitude: raw.Location.longitude,
+                }
+              : undefined;
+
+          return {
+            id: doc.id,
+            title: raw.Business ?? 'Untitled',
+            description: raw.Description ?? '',
+            email: raw.Email ?? '',
+            phone: raw.Phone ?? '',
+            fax: raw.Fax ?? '',
+            website: raw.Website ?? '',
+            location,
+          };
+        });
+
+        setOpportunities(data);
+        setLoading(false);
+      },
+      (error) => {
+        console.error('Error fetching volunteer opportunities:', error);
+        setLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  // Get user location
+  useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          setLocationError('Location permission denied');
+          return;
+        }
+
+        const pos = await Location.getCurrentPositionAsync({});
+        setUserLocation({
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+        });
+      } catch (err) {
+        console.error('Error getting user location:', err);
+        setLocationError('Could not get location');
+      }
+    })();
+  }, []);
+
+  // Compute distance for each opportunity (if possible)
+  const opportunitiesWithDistance: Opportunity[] = opportunities.map((opp) => {
+    if (userLocation && opp.location) {
+      const distance = haversineMiles(
+        userLocation.latitude,
+        userLocation.longitude,
+        opp.location.latitude,
+        opp.location.longitude
+      );
+      return { ...opp, distance };
+    }
+    return opp;
+  });
+
+  const filteredOpportunities = opportunitiesWithDistance.filter((opp) => {
+    if (opp.distance == null) return true; // show if we can't compute distance
+    return opp.distance <= maxDistance;
+  });
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.contentContainer}>
-        
         <Header />
 
         <Text style={styles.screenTitle}>Volunteer Near You</Text>
 
-        {/* --- Time Filters --- */}
-        <View style={styles.timeFilterRow}>
-          <TimeFilter label="Morning" />
-          <TimeFilter label="Afternoon" />
-          <TimeFilter label="Evening" />
-        </View>
-
-        {/* --- Distance Slider --- */}
+        {/* Distance Slider */}
         <View style={styles.sliderContainer}>
           <Slider
             value={distanceValue}
-            onValueChange={(value) => setDistanceValue(value)}
+            onValueChange={(value) => setDistanceValue(value as number[])}
             minimumValue={1}
-            maximumValue={10}
+            maximumValue={50}
             step={0.5}
             thumbTintColor={COLORS.darkGreen}
             minimumTrackTintColor={COLORS.darkGreen}
@@ -140,23 +246,39 @@ export default function SearchScreen() {
             containerStyle={styles.sliderBar}
           />
           <View style={styles.sliderLabelRow}>
-            <Text style={styles.sliderLabelText}>Nearby</Text>
-            <Text style={styles.sliderLabelText}>{maxDistance.toFixed(1)} mi</Text>
+            <Text style={styles.sliderLabelText}>Within</Text>
+            <Text style={styles.sliderLabelText}>
+              {maxDistance.toFixed(1)} mi
+            </Text>
           </View>
         </View>
 
-        {/* --- Opportunity List --- */}
-        {filteredOpportunities.length > 0 ? (
-            filteredOpportunities.map((opportunity) => (
-          <OpportunityCard key={opportunity.id} {...opportunity} />
-        ))
-        ) : (
-          <Text style={styles.noResultsText}>
-            No volunteer opportunities found within {maxDistance.toFixed(1)} miles 
-            for the {activeTime.toLowerCase()}.
+        {/* Loading states */}
+        {loading && (
+          <View style={{ marginTop: 20, alignItems: 'center' }}>
+            <ActivityIndicator size="small" />
+            <Text style={{ marginTop: 10 }}>Loading opportunities...</Text>
+          </View>
+        )}
+
+        {!loading && locationError && (
+          <Text style={{ color: 'red', marginBottom: 10 }}>
+            {locationError} – showing opportunities without distance filtering.
           </Text>
         )}
 
+        {/* Opportunity List */}
+        {!loading && (
+          filteredOpportunities.length > 0 ? (
+            filteredOpportunities.map((opportunity) => (
+              <OpportunityCard key={opportunity.id} {...opportunity} />
+            ))
+          ) : (
+            <Text style={styles.noResultsText}>
+              No opportunities found within {maxDistance.toFixed(1)} miles.
+            </Text>
+          )
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -170,10 +292,9 @@ const styles = StyleSheet.create({
   contentContainer: {
     paddingHorizontal: 20,
     paddingTop: 10,
-    paddingBottom: 100, // Make space for the bottom tab bar
+    paddingBottom: 100,
   },
 
-  // Header styles
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -190,14 +311,11 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: COLORS.darkGreen,
-    fontFamily: 'serif',
-    lineHeight: 18,
   },
   subLogoText: {
     fontSize: 8,
     color: COLORS.darkGreen,
     fontWeight: '500',
-    lineHeight: 8,
   },
   menuButton: {
     backgroundColor: COLORS.lightGreen,
@@ -212,38 +330,16 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
 
-  // Time Filter styles
-  timeFilterRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-start',
-    gap: 10,
-    marginBottom: 20,
-  },
-  timeFilterButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 15,
-    borderRadius: 20,
-  },
-  timeFilterText: {
-    color: COLORS.textDark,
-    fontWeight: '600',
-    fontSize: 14,
-  },
-
-  // Slider styles
   sliderContainer: {
     marginBottom: 20,
-    paddingHorizontal: 5, // give space for the slider ends
+    paddingHorizontal: 5,
   },
   sliderBar: {
-    height: 30, // For the track
-    marginBottom: 0,
-    marginTop: 0,
+    height: 30,
   },
   sliderLabelRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
     marginTop: -10,
   },
   sliderLabelText: {
@@ -251,8 +347,6 @@ const styles = StyleSheet.create({
     color: COLORS.textDark,
   },
 
-
-  // Card styles
   card: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -260,8 +354,6 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     padding: 15,
     marginBottom: 15,
-    borderWidth: 1,
-    borderColor: COLORS.darkGreen + '20', // Light border
   },
   leafIcon: {
     marginRight: 15,
@@ -272,11 +364,9 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: COLORS.textDark,
   },
   cardDescription: {
     fontSize: 14,
-    color: COLORS.textDark,
     marginBottom: 5,
   },
   cardFooter: {
@@ -287,8 +377,6 @@ const styles = StyleSheet.create({
   },
   cardDetail: {
     fontSize: 12,
-    color: COLORS.textDark,
-    fontWeight: '500',
   },
   signUpButton: {
     backgroundColor: COLORS.lightGreen,
@@ -305,6 +393,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 30,
     fontSize: 16,
-    color: COLORS.textDark,
-  }
+  },
 });
