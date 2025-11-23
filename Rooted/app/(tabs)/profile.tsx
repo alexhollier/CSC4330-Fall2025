@@ -3,6 +3,10 @@ import Icon from "react-native-vector-icons/Ionicons";
 import Logo from "react-native-vector-icons/MaterialCommunityIcons";
 import MaterialIcon from "react-native-vector-icons/MaterialIcons";
 import AntDesignIcon from "react-native-vector-icons/AntDesign";
+import { useEffect, useState } from "react";
+import { auth, db } from "../../firebaseConfig";
+import { doc, getDoc } from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
 
 const userData = {
   name: "John Doe",
@@ -170,6 +174,35 @@ const styles = StyleSheet.create({
 });
 
 export default function Index() {
+  const [userName, setUserName] = useState<string | null>(null);
+  const [isSignedIn, setIsSignedIn] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        setIsSignedIn(true);
+        try {
+          const userDocRef = doc(db, "UserInformation", user.uid);
+          const userDocSnap = await getDoc(userDocRef);
+          
+          if (userDocSnap.exists()) {
+            setUserName(userDocSnap.data().name);
+          } else {
+            setUserName("User");
+          }
+        } catch (error) {
+          console.error("Error fetching user data:", error);
+          setUserName("User");
+        }
+      } else {
+        setIsSignedIn(false);
+        setUserName(null);
+      }
+    });
+
+    return unsubscribe;
+  }, []);
+
   const progressPercentage = (userData.hoursCompleted / userData.hoursGoal) * 100;
 
   return (
@@ -191,7 +224,7 @@ export default function Index() {
           <View style={{ width: 30 }} /> 
         </View>
 
-        <Text style={styles.greetingText}>Hello, {userData.name}</Text>
+        <Text style={styles.greetingText}>{isSignedIn ? `Hello, ${userName}` : "Welcome"}</Text>
 
         {/* B. Hours Tracker */}
         <View style={styles.hoursCard}>

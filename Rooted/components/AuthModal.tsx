@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Alert, ActivityIndicator, } from 'react-native';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth';
-import { auth } from '../firebaseConfig';
+import { auth, db } from '../firebaseConfig';
+import { collection, setDoc, doc } from 'firebase/firestore';
 
 interface AuthModalProps {
   visible: boolean;
@@ -186,13 +187,14 @@ interface SignUpModalProps {
 }
 
 function SignUpModal({ visible, onClose, onBackToLogin }: SignUpModalProps) {
+  const [signUpName, setSignUpName] = useState('');
   const [signUpEmail, setSignUpEmail] = useState('');
   const [signUpPassword, setSignUpPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleCreateAccount = async () => {
-    if (!signUpEmail || !signUpPassword || !confirmPassword) {
+    if (!signUpName || !signUpEmail || !signUpPassword || !confirmPassword) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
@@ -218,6 +220,13 @@ function SignUpModal({ visible, onClose, onBackToLogin }: SignUpModalProps) {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, signUpEmail, signUpPassword);
       
+      // Save user information to Firestore
+      await setDoc(doc(db, 'UserInformation', userCredential.user.uid), {
+        email: signUpEmail,
+        name: signUpName,
+        createdAt: new Date(),
+      });
+      
       // Send verification email
       await sendEmailVerification(userCredential.user);
       
@@ -228,6 +237,7 @@ function SignUpModal({ visible, onClose, onBackToLogin }: SignUpModalProps) {
           {
             text: 'OK',
             onPress: () => {
+              setSignUpName('');
               setSignUpEmail('');
               setSignUpPassword('');
               setConfirmPassword('');
@@ -260,6 +270,14 @@ function SignUpModal({ visible, onClose, onBackToLogin }: SignUpModalProps) {
         <View style={styles.modalContent}>
           <Text style={styles.title}>Create Account</Text>
           <Text style={styles.subtitle}>Sign up to get started</Text>
+
+          <TextInput
+            style={styles.input}
+            placeholder="Full Name"
+            value={signUpName}
+            onChangeText={setSignUpName}
+            editable={!loading}
+          />
 
           <TextInput
             style={styles.input}
