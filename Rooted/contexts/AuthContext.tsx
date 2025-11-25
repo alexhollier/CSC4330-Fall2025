@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from '../firebaseConfig';
+import { migrateLocalToUser } from '../app/services/filterService';
 
 interface AuthContextType {
   user: User | null;
@@ -21,6 +22,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const elapsed = Date.now() - startTime;
       console.log(`[AuthContext] Auth state received in ${elapsed}ms, user: ${currentUser ? 'signed in' : 'not signed in'}`);
       setUser(currentUser);
+      if (currentUser) {
+        // Attempt to migrate any anonymous/local filters into this user's Firestore doc
+        migrateLocalToUser(currentUser.uid).catch((err) => console.error('[AuthContext] migrateLocalToUser failed', err));
+      }
       setLoading(false);
     });
 
