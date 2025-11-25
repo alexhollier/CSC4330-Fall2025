@@ -1,9 +1,11 @@
+// app/(tabs)/search.tsx
 import React, { useEffect, useState } from 'react';
-import { Text, View, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity } from 'react-native';
+import { Text, View, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity, Alert } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import AntDesign from 'react-native-vector-icons/AntDesign';
 import { Slider } from '@miblanchard/react-native-slider';
+import { useAuth } from '../../contexts/AuthContext';
 
 const COLORS = {
   background: '#fcfaf0', 
@@ -12,7 +14,8 @@ const COLORS = {
   card: '#e0c9b0', 
   textDark: '#000000',
   textLight: '#ffffff',
-  timeFilter: '#d1d1d1', 
+  timeFilter: '#d1d1d1',
+  admin: '#ff6347',
 };
 
 const volunteerOpportunities = [
@@ -54,7 +57,7 @@ const volunteerOpportunities = [
 ];
 
 //Logo and Menu Header Component
-const Header = () => (
+const Header = ({ isOrganization }: { isOrganization: boolean }) => (
   <View style={styles.header}>
     <View style={styles.logoContainer}>
       <MaterialCommunityIcons name="tree-outline" size={35} color={COLORS.darkGreen} />
@@ -63,9 +66,22 @@ const Header = () => (
         <Text style={styles.subLogoText}>VOLUNTEER & COMMUNITY</Text>
       </View>
     </View>
-    <TouchableOpacity style={styles.menuButton}>
-      <MaterialIcons name="menu" size={30} color={COLORS.textLight} />
-    </TouchableOpacity>
+    
+    <View style={styles.headerButtons}>
+      {isOrganization && (
+        <TouchableOpacity 
+          style={styles.adminButton}
+          onPress={() => Alert.alert('Admin', 'Admin panel coming soon!')}
+        >
+          <MaterialIcons name="admin-panel-settings" size={24} color={COLORS.textLight} />
+          <Text style={styles.adminButtonText}>Admin</Text>
+        </TouchableOpacity>
+      )}
+      
+      <TouchableOpacity style={styles.menuButton}>
+        <MaterialIcons name="menu" size={30} color={COLORS.textLight} />
+      </TouchableOpacity>
+    </View>
   </View>
 );
 
@@ -87,7 +103,7 @@ const OpportunityCard = ({ title, description, distance, time }: typeof voluntee
 );
 
 export default function SearchScreen() {
-  // State for the distance slider
+  const { isOrganization } = useAuth();
   const [distanceValue, setDistanceValue] = React.useState([5]);
   const maxDistance = distanceValue[0];
   const [activeTime, setActiveTime] = React.useState('Morning');
@@ -98,7 +114,6 @@ export default function SearchScreen() {
     return distanceMatch && timeMatch;
   }));
 
-  // Helper component for time filter buttons
   const TimeFilter = ({ label }: { label: string }) => (
     <TouchableOpacity 
       style={[
@@ -115,7 +130,7 @@ export default function SearchScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.contentContainer}>
         
-        <Header />
+        <Header isOrganization={isOrganization} />
 
         <Text style={styles.screenTitle}>Volunteer Near You</Text>
 
@@ -170,7 +185,7 @@ const styles = StyleSheet.create({
   contentContainer: {
     paddingHorizontal: 20,
     paddingTop: 10,
-    paddingBottom: 100, // Make space for the bottom tab bar
+    paddingBottom: 100,
   },
 
   // Header styles
@@ -198,6 +213,25 @@ const styles = StyleSheet.create({
     color: COLORS.darkGreen,
     fontWeight: '500',
     lineHeight: 8,
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  adminButton: {
+    backgroundColor: COLORS.admin,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  adminButtonText: {
+    color: COLORS.textLight,
+    fontWeight: 'bold',
+    fontSize: 14,
   },
   menuButton: {
     backgroundColor: COLORS.lightGreen,
@@ -233,10 +267,10 @@ const styles = StyleSheet.create({
   // Slider styles
   sliderContainer: {
     marginBottom: 20,
-    paddingHorizontal: 5, // give space for the slider ends
+    paddingHorizontal: 5,
   },
   sliderBar: {
-    height: 30, // For the track
+    height: 30,
     marginBottom: 0,
     marginTop: 0,
   },
@@ -251,7 +285,6 @@ const styles = StyleSheet.create({
     color: COLORS.textDark,
   },
 
-
   // Card styles
   card: {
     flexDirection: 'row',
@@ -261,7 +294,7 @@ const styles = StyleSheet.create({
     padding: 15,
     marginBottom: 15,
     borderWidth: 1,
-    borderColor: COLORS.darkGreen + '20', // Light border
+    borderColor: COLORS.darkGreen + '20',
   },
   leafIcon: {
     marginRight: 15,

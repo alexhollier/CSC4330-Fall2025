@@ -1,12 +1,29 @@
-import MapView, { Marker } from "react-native-maps";
-import { StyleSheet, View, TouchableOpacity, Text } from "react-native";
+
+import MapView, { Marker, Callout } from "react-native-maps";
+import { StyleSheet, View, TouchableOpacity, View, Linking, Text, Image } from "react-native";
 import React, { useState, useEffect } from "react";
 import FilterPanel from "./FilterPanel"; 
 import { useAuth } from '../../contexts/AuthContext';
 import { saveUserFilters, loadUserFilters, FilterSettings } from '../services/filterService';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { collection, onSnapshot } from "firebase/firestore";
+import { db } from "../../firebaseConfig";
+
+
+interface Opportunity {
+  id: string;
+  business: string;
+  location: {
+    latitude: number;
+    longitude: number;
+  };
+  description: string;
+}
+
 
 export default function MapPage() {
+  const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
+
   const center = {
     latitude: 30.4515,
     longitude: -91.1871,
@@ -58,6 +75,28 @@ export default function MapPage() {
       console.log('[map] user not signed in; not saving filters to Firestore');
     }
   };
+  useEffect(() => {
+    // Listen to Firestore changes in real-time
+    const unsub = onSnapshot(
+      collection(db, "VolunteerOpportunity"),
+      (snapshot) => {
+        const items = snapshot.docs.map((doc) => {
+          const data = doc.data();
+
+          return {
+            id: doc.id,
+            business: data.Business,
+            location: data.Location,
+            description: data.Description,
+          };
+        });
+
+        setOpportunities(items);
+      }
+    );
+
+    return () => unsub();
+  }, []);
 
   return (
     <View style={styles.container}>
@@ -88,13 +127,76 @@ export default function MapPage() {
         initialMorning={activeFilters.morning}
         initialAfternoon={activeFilters.afternoon}
       />
+      >
+        {opportunities.map((item) => (
+          <Marker
+            key={item.id}
+            coordinate={{
+              latitude: item.location.latitude,
+              longitude: item.location.longitude,
+            }}
+          >
+            <View style={styles.markerContainer}>
+              <Image
+                source={require("../../assets/images/rooted_logo.png")}
+                style={styles.markerImage}
+                resizeMode="contain"
+              />
+            </View>
+            <Callout
+            tooltip={true}
+              onPress={() => {
+                const lat = item.location.latitude;
+                const lng = item.location.longitude;
+
+                const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+                Linking.openURL(url);
+              }}
+            >
+              <View style={{
+  backgroundColor: "white",
+  padding: 10,
+  borderRadius: 8,
+  maxWidth: 250,
+  elevation: 4
+}}>
+  <Text style={{ fontWeight: "bold", fontSize: 16, marginBottom: 8 }}>
+    {item.business}
+  </Text>
+  <Text style={{ fontSize: 12, marginBottom: 8 }}>
+    {item.description}
+  </Text>
+
+  <Text style={{ color: "blue", fontWeight: "600" }}>
+    Get Directions →
+  </Text>
+</View>
+
+            </Callout>
+          </Marker>
+        ))}
+      </MapView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+  container: { flex: 1 },
+  markerContainer: {
+    backgroundColor: "#fcfaf0",
+    padding: 8,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: "#333",
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+  markerImage: {
+    width: 30,
+    height: 30,
   },
   menuButton: {
     position: 'absolute',

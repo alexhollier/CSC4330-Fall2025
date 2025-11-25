@@ -1,31 +1,78 @@
+// contexts/AuthContext.tsx
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { auth } from '../firebaseConfig';
+
+import { auth, db } from '../firebaseConfig';
 import { migrateLocalToUser } from '../app/services/filterService';
+import { doc, getDoc } from 'firebase/firestore';
+
+
+interface UserData {
+  uid: string;
+  email: string | null;
+  accountType: 'user' | 'organization';
+}
+
 
 interface AuthContextType {
   user: User | null;
+  userData: UserData | null;
   loading: boolean;
+  isOrganization: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     console.log('[AuthContext] Starting auth state check');
     const startTime = Date.now();
     
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       const elapsed = Date.now() - startTime;
       console.log(`[AuthContext] Auth state received in ${elapsed}ms, user: ${currentUser ? 'signed in' : 'not signed in'}`);
+      
       setUser(currentUser);
+      
       if (currentUser) {
-        // Attempt to migrate any anonymous/local filters into this user's Firestore doc
-        migrateLocalToUser(currentUser.uid).catch((err) => console.error('[AuthContext] migrateLocalToUser failed', err));
+        // Fetch user data from Firestore
+        try {
+          console.log('[AuthContext] Fetching user data from Firestore');
+          const userDocRef = doc(db, 'UserInformation', currentUser.uid);
+          const userDoc = await getDoc(userDocRef);
+          
+          if (userDoc.exists()) {
+            const data = userDoc.data();
+            console.log('[AuthContext] User data loaded:', data.accountType);
+            setUserData({
+              uid: currentUser.uid,
+              email: currentUser.email,
+              accountType: data.accountType || 'user',
+            });
+          } else {
+            console.log('[AuthContext] No user document found, defaulting to user type');
+            setUserData({
+              uid: currentUser.uid,
+              email: currentUser.email,
+              accountType: 'user',
+            });
+          }
+        } catch (error) {
+          console.error('[AuthContext] Error fetching user data:', error);
+          setUserData({
+            uid: currentUser.uid,
+            email: currentUser.email,
+            accountType: 'user',
+          });
+        }
+      } else {
+        setUserData(null);
       }
+      
       setLoading(false);
     });
 
@@ -41,8 +88,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  const isOrganization = userData?.accountType === 'organization';
+
   return (
-    <AuthContext.Provider value={{ user, loading }}>
+    <AuthContext.Provider value={{ user, userData, loading, isOrganization }}>
       {children}
     </AuthContext.Provider>
   );
