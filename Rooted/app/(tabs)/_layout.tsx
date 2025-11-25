@@ -3,7 +3,7 @@ import { Tabs, useRouter } from 'expo-router';
 import { View, Pressable, StyleSheet } from 'react-native';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import Ionicons from 'react-native-vector-icons/Ionicons'; 
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import AntDesign from 'react-native-vector-icons/AntDesign';
 import { useNavigation } from 'expo-router';
 import { JSX } from 'react/jsx-runtime';
@@ -20,25 +20,29 @@ const CustomTabBar = ({ state }: BottomTabBarProps) => {
 
   const tabs = [
     { name: 'search', icon: <Ionicons name="search" style={styles.navIcon} /> },
-    { name: 'map', icon: <Ionicons name="map-outline" style={styles.navIcon} /> }, 
+    { name: 'map', icon: <Ionicons name="map-outline" style={styles.navIcon} /> },
     { name: 'camera', icon: <MaterialIcons name="photo-camera" style={styles.navIcon} /> },
-    { name: 'profile', icon: <MaterialIcons name="person" style={styles.navIcon} /> }, 
+    { name: 'profile', icon: <MaterialIcons name="person" style={styles.navIcon} /> },
   ];
 
   const NavIcon = ({ icon, active, name }: { icon: JSX.Element, active: boolean, name: string }) => {
     const handlePress = () => {
-        router.push(`/(tabs)/${name}`);
+      router.push('/(tabs)/search');
+      router.push('/(tabs)/map');
+      router.push('/(tabs)/camera');
+      router.push('/(tabs)/profile');
+
     };
 
     return (
-        <Pressable onPress={handlePress} style={styles.navButton}>
-            <View style={active ? styles.profileIconContainer : {}}>
-                {icon}
-            </View>
-        </Pressable>
+      <Pressable onPress={handlePress} style={styles.navButton}>
+        <View style={active ? styles.profileIconContainer : {}}>
+          {icon}
+        </View>
+      </Pressable>
     );
   };
-  
+
   return (
     <View style={styles.bottomNav}>
       {tabs.map((tab, index) => (
@@ -46,7 +50,7 @@ const CustomTabBar = ({ state }: BottomTabBarProps) => {
           key={index}
           name={tab.name}
           icon={tab.icon}
-          active={focusedRouteName === tab.name} 
+          active={focusedRouteName === tab.name}
         />
       ))}
     </View>
@@ -58,19 +62,19 @@ const CustomTabBar = ({ state }: BottomTabBarProps) => {
 export default function TabsLayout() {
   return (
     <Tabs
-      
+
       tabBar={(props) => <CustomTabBar {...props} />}
-      
+
       screenOptions={{
         headerShown: false,
-        tabBarStyle: { display: 'none' }, 
+        tabBarStyle: { display: 'none' },
         tabBarShowLabel: false,
       }}
     >
 
       <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
       <Tabs.Screen name="search" options={{ title: 'Search' }} />
-      <Tabs.Screen name="map" options={{ title: 'Map' }} /> 
+      <Tabs.Screen name="map" options={{ title: 'Map' }} />
       <Tabs.Screen name="camera" options={{ title: 'Camera' }} />
     </Tabs>
   );
@@ -85,7 +89,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: 80, 
+    height: 80,
     backgroundColor: COLORS.darkGreen,
     flexDirection: 'row',
     justifyContent: 'space-around',
@@ -101,7 +105,7 @@ const styles = StyleSheet.create({
     fontSize: 30,
   },
   profileIconContainer: {
-    backgroundColor: '#ff6347', 
+    backgroundColor: '#ff6347',
     borderRadius: 50,
     padding: 12,
     borderWidth: 1,
