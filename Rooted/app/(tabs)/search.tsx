@@ -184,29 +184,69 @@ export default function SearchScreen() {
     return () => unsubscribe();
   }, []);
 
-  // Get user location
+    // Get user location (with fallback)
   useEffect(() => {
     (async () => {
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          setLocationError('Location permission denied');
+        const servicesEnabled = await Location.hasServicesEnabledAsync();
+        if (!servicesEnabled) {
+          console.warn('Location services disabled, using default location.');
+          setLocationError('Location services disabled. Using default location.');
+          setUserLocation({
+            latitude: 30.4515,
+            longitude: -91.1871,
+          });
           return;
         }
 
-        const pos = await Location.getCurrentPositionAsync({});
-        setUserLocation({
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-        });
+        const existing = await Location.getForegroundPermissionsAsync();
+        let finalStatus = existing.status;
+
+        if (existing.status !== 'granted') {
+          const request = await Location.requestForegroundPermissionsAsync();
+          finalStatus = request.status;
+        }
+
+        if (finalStatus !== 'granted') {
+          console.warn('Location permission not granted, using default location.');
+          setLocationError('Location permission not granted. Using default location.');
+          setUserLocation({
+            latitude: 30.4515,
+            longitude: -91.1871,
+          });
+          return;
+        }
+
+        try {
+          const pos = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+
+          setUserLocation({
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+          });
+          setLocationError(null);
+        } catch (err) {
+          console.warn('Current location unavailable, using default location.', err);
+          setLocationError('Current location unavailable. Using default location.');
+          setUserLocation({
+            latitude: 30.4515,
+            longitude: -91.1871,
+          });
+        }
       } catch (err) {
-        console.error('Error getting user location:', err);
-        setLocationError('Could not get location');
+        console.error('Unexpected error getting user location:', err);
+        setLocationError('Unexpected error. Using default location.');
+        setUserLocation({
+          latitude: 30.4515,
+          longitude: -91.1871,
+        });
       }
     })();
   }, []);
 
-  // Compute distance for each opportunity (if possible)
+
   const opportunitiesWithDistance: Opportunity[] = opportunities.map((opp) => {
     if (userLocation && opp.location) {
       const distance = haversineMiles(
@@ -221,7 +261,7 @@ export default function SearchScreen() {
   });
 
   const filteredOpportunities = opportunitiesWithDistance.filter((opp) => {
-    if (opp.distance == null) return true; // show if we can't compute distance
+    if (opp.distance == null) return true;
     return opp.distance <= maxDistance;
   });
 
@@ -232,7 +272,7 @@ export default function SearchScreen() {
 
         <Text style={styles.screenTitle}>Volunteer Near You</Text>
 
-        {/* Distance Slider */}
+        
         <View style={styles.sliderContainer}>
           <Slider
             value={distanceValue}
@@ -253,7 +293,6 @@ export default function SearchScreen() {
           </View>
         </View>
 
-        {/* Loading states */}
         {loading && (
           <View style={{ marginTop: 20, alignItems: 'center' }}>
             <ActivityIndicator size="small" />
@@ -267,7 +306,6 @@ export default function SearchScreen() {
           </Text>
         )}
 
-        {/* Opportunity List */}
         {!loading && (
           filteredOpportunities.length > 0 ? (
             filteredOpportunities.map((opportunity) => (
