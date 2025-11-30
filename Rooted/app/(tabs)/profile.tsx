@@ -600,6 +600,128 @@ export default function Index() {
 
   const inputPlaceholder = editMode === 'required' ? 'Required Hours' : 'Number of Hours';
 
+  const handleSignOut = async () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Sign Out',
+          onPress: async () => {
+            try {
+              await signOut(auth);
+              console.log('User signed out successfully');
+            } catch (error) {
+              console.error('Error signing out:', error);
+              Alert.alert('Error', 'Failed to sign out. Please try again.');
+            }
+          },
+          style: 'destructive',
+        },
+      ]
+    );
+  };
+
+  const handleEditProfile = () => {
+    setEditOption(null);
+    setEditModalVisible(true);
+  };
+
+  const openEditOption = (option: 'name' | 'organizations' | 'password') => {
+    setEditOption(option);
+    if (option === 'name') {
+      setEditName(userData.name);
+    } else if (option === 'organizations') {
+      setEditOrganizations([...userData.organizations]);
+      setNewOrgName('');
+      setNewOrgHours('');
+    }
+  };
+
+  const addOrganization = () => {
+    if (newOrgName.trim() && newOrgHours.trim()) {
+      setEditOrganizations([...editOrganizations, { name: newOrgName, hours: newOrgHours }]);
+      setNewOrgName('');
+      setNewOrgHours('');
+    } else {
+      Alert.alert('Error', 'Please enter both organization name and hours');
+    }
+  };
+
+  const removeOrganization = (index: number) => {
+    setEditOrganizations(editOrganizations.filter((_, i) => i !== index));
+  };
+
+  const updateOrganization = (index: number, field: 'name' | 'hours', value: string) => {
+    const updated = [...editOrganizations];
+    updated[index][field] = value;
+    setEditOrganizations(updated);
+  };
+
+  const saveName = async () => {
+    if (!editName.trim()) {
+      Alert.alert('Error', 'Name cannot be empty');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        const userDocRef = doc(db, 'UserInformation', currentUser.uid);
+        await updateDoc(userDocRef, { name: editName });
+        setUserData({ ...userData, name: editName });
+        Alert.alert('Success', 'Name updated successfully');
+        setEditModalVisible(false);
+      }
+    } catch (error) {
+      console.error('Error updating name:', error);
+      Alert.alert('Error', 'Failed to update name. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveOrganizations = async () => {
+    setSaving(true);
+    try {
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        // Convert organizations back to "Name: Hours" format
+        const orgStrings = editOrganizations.map(org => `${org.name}: ${org.hours}`);
+        
+        const userDocRef = doc(db, 'UserInformation', currentUser.uid);
+        await updateDoc(userDocRef, { Organizations: orgStrings });
+        setUserData({ ...userData, organizations: editOrganizations });
+        Alert.alert('Success', 'Organizations updated successfully');
+        setEditModalVisible(false);
+      }
+    } catch (error) {
+      console.error('Error updating organizations:', error);
+      Alert.alert('Error', 'Failed to update organizations. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const sendPasswordReset = async () => {
+    try {
+      const currentUser = auth.currentUser;
+      if (currentUser?.email) {
+        await sendPasswordResetEmail(auth, currentUser.email);
+        Alert.alert('Success', 'Password reset email sent to ' + currentUser.email);
+        setEditModalVisible(false);
+      }
+    } catch (error) {
+      console.error('Error sending password reset:', error);
+      Alert.alert('Error', 'Failed to send password reset email. Please try again.');
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.contentContainer}>

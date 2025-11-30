@@ -1,3 +1,4 @@
+// app/(tabs)/search.tsx
 import React, { useEffect, useState } from 'react';
 import {
   Text,
@@ -82,9 +83,22 @@ const Header = () => (
         <Text style={styles.subLogoText}>VOLUNTEER & COMMUNITY</Text>
       </View>
     </View>
-    <TouchableOpacity style={styles.menuButton}>
-      <MaterialIcons name="menu" size={30} color={COLORS.textLight} />
-    </TouchableOpacity>
+    
+    <View style={styles.headerButtons}>
+      {isOrganization && (
+        <TouchableOpacity 
+          style={styles.adminButton}
+          onPress={() => Alert.alert('Admin', 'Admin panel coming soon!')}
+        >
+          <MaterialIcons name="admin-panel-settings" size={24} color={COLORS.textLight} />
+          <Text style={styles.adminButtonText}>Admin</Text>
+        </TouchableOpacity>
+      )}
+      
+      <TouchableOpacity style={styles.menuButton}>
+        <MaterialIcons name="menu" size={30} color={COLORS.textLight} />
+      </TouchableOpacity>
+    </View>
   </View>
 );
 
@@ -536,6 +550,25 @@ const styles = StyleSheet.create({
     fontSize: 8,
     color: COLORS.darkGreen,
     fontWeight: '500',
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  adminButton: {
+    backgroundColor: COLORS.admin,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  adminButtonText: {
+    color: COLORS.textLight,
+    fontWeight: 'bold',
+    fontSize: 14,
   },
   menuButton: {
     backgroundColor: COLORS.lightGreen,

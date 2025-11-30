@@ -1,5 +1,5 @@
 import MapView, { Marker, Callout } from "react-native-maps";
-import { StyleSheet, View, Linking, Text } from "react-native";
+import { StyleSheet, View, Linking, Text, Image } from "react-native";
 import { useEffect, useState } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "../../firebaseConfig";
@@ -58,13 +58,20 @@ export default function MapPage() {
         {opportunities.map((item) => (
           <Marker
             key={item.id}
-            pinColor="forestgreen"
             coordinate={{
               latitude: item.location.latitude,
               longitude: item.location.longitude,
             }}
           >
+            <View style={styles.markerContainer}>
+              <Image
+                source={require("../../assets/images/rooted_logo.png")}
+                style={styles.markerImage}
+                resizeMode="contain"
+              />
+            </View>
             <Callout
+            tooltip={true}
               onPress={() => {
                 const lat = item.location.latitude;
                 const lng = item.location.longitude;
@@ -73,18 +80,25 @@ export default function MapPage() {
                 Linking.openURL(url);
               }}
             >
-              <View style={{ padding: 10, maxWidth: 200 }}>
-                <Text style={{ fontWeight: "bold", fontSize: 16, marginBottom: 8 }}>
-                  {item.business}
-                </Text>
-                <Text style={{  fontSize: 12 }}>
-                  {item.description}
-                </Text>
+              <View style={{
+  backgroundColor: "white",
+  padding: 10,
+  borderRadius: 8,
+  maxWidth: 250,
+  elevation: 4
+}}>
+  <Text style={{ fontWeight: "bold", fontSize: 16, marginBottom: 8 }}>
+    {item.business}
+  </Text>
+  <Text style={{ fontSize: 12, marginBottom: 8 }}>
+    {item.description}
+  </Text>
 
-                <Text style={{ marginTop: 8, color: "blue" }}>
-                  Get Directions →
-                </Text>
-              </View>
+  <Text style={{ color: "blue", fontWeight: "600" }}>
+    Get Directions →
+  </Text>
+</View>
+
             </Callout>
           </Marker>
         ))}
@@ -95,4 +109,20 @@ export default function MapPage() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  markerContainer: {
+    backgroundColor: "#fcfaf0",
+    padding: 8,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: "#333",
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+  markerImage: {
+    width: 30,
+    height: 30,
+  },
 });
