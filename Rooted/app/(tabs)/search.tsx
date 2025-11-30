@@ -7,13 +7,16 @@ import {
   SafeAreaView,
   TouchableOpacity,
   ActivityIndicator,
+  Animated,
+  Linking,
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { Slider } from '@miblanchard/react-native-slider';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, doc, updateDoc, arrayUnion, arrayRemove, getDoc } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
 import * as Location from 'expo-location';
+import { useAuth } from '../../contexts/AuthContext';
 
 const COLORS = {
   background: '#fcfaf0',
@@ -86,59 +89,235 @@ const Header = () => (
 );
 
 const OpportunityCard = ({
+  id,
   title,
   description,
   distance,
   email,
   phone,
   website,
-}: Opportunity) => {
+  isFavorited,
+  onToggleFavorite,
+}: Opportunity & { isFavorited: boolean; onToggleFavorite: (id: string) => void }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
   const distanceText =
-    distance != null ? `${distance.toFixed(1)} mi away` : 'Distance unavailable';
+    distance != null ? `${distance.toFixed(1)} mi` : 'Distance unavailable';
+
+  const handleSignUp = async () => {
+    if (website) {
+      try {
+        // Ensure URL has a protocol
+        let url = website;
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+          url = 'https://' + url;
+        }
+        
+        const supported = await Linking.canOpenURL(url);
+        if (supported) {
+          await Linking.openURL(url);
+        } else {
+          console.error("Don't know how to open URI: " + url);
+        }
+      } catch (error) {
+        console.error('Error opening website:', error);
+      }
+    }
+  };
+
+  const handlePhoneCall = async (phoneNumber: string) => {
+    try {
+      // Remove all non-numeric characters except +
+      const cleanedNumber = phoneNumber.replace(/[^\d+]/g, '');
+      const url = `tel:${cleanedNumber}`;
+      const supported = await Linking.canOpenURL(url);
+      if (supported) {
+        await Linking.openURL(url);
+      }
+    } catch (error) {
+      console.error('Error opening phone:', error);
+    }
+  };
+
+  const handleEmail = async (emailAddress: string) => {
+    try {
+      const url = `mailto:${emailAddress}`;
+      const supported = await Linking.canOpenURL(url);
+      if (supported) {
+        await Linking.openURL(url);
+      }
+    } catch (error) {
+      console.error('Error opening email:', error);
+    }
+  };
+
+  const handleFavorite = (e: any) => {
+    e.stopPropagation();
+    onToggleFavorite(id);
+  };
 
   return (
-    <View style={[styles.card, { backgroundColor: COLORS.card }]}>
-      <MaterialCommunityIcons
-        name="leaf"
-        size={40}
-        color={COLORS.lightGreen}
-        style={styles.leafIcon}
-      />
-      <View style={styles.cardContent}>
-        <Text style={styles.cardTitle}>{title}</Text>
-        <Text style={styles.cardDescription}>{description}</Text>
-
-        {phone ? <Text style={styles.cardDetail}>Phone: {phone}</Text> : null}
-        {email ? <Text style={styles.cardDetail}>Email: {email}</Text> : null}
-        {website ? (
-          <Text style={styles.cardDetail} numberOfLines={1}>
-            Website: {website}
-          </Text>
-        ) : null}
-
-        <View style={styles.cardFooter}>
-          <Text style={styles.cardDetail}>{distanceText}</Text>
-          <TouchableOpacity style={styles.signUpButton}>
-            <Text style={styles.signUpButtonText}>Sign Up</Text>
+    <TouchableOpacity 
+      style={[styles.card, isExpanded && styles.cardExpanded]} 
+      onPress={() => setIsExpanded(!isExpanded)}
+      activeOpacity={0.7}
+    >
+      <View style={styles.cardHeader}>
+        <View style={styles.cardHeaderLeft}>
+          <View style={styles.iconCircle}>
+            <MaterialCommunityIcons
+              name="hand-heart"
+              size={24}
+              color={COLORS.darkGreen}
+            />
+          </View>
+          <View style={styles.cardHeaderText}>
+            <Text style={styles.cardTitle}>{title}</Text>
+            <View style={styles.distanceRow}>
+              <MaterialCommunityIcons
+                name="map-marker"
+                size={14}
+                color={COLORS.lightGreen}
+              />
+              <Text style={styles.distanceText}>{distanceText}</Text>
+            </View>
+          </View>
+        </View>
+        <View style={styles.cardHeaderRight}>
+          <TouchableOpacity onPress={handleFavorite} style={styles.favoriteButton}>
+            <MaterialCommunityIcons
+              name={isFavorited ? "heart" : "heart-outline"}
+              size={22}
+              color={COLORS.lightGreen}
+            />
           </TouchableOpacity>
+          <MaterialCommunityIcons
+            name={isExpanded ? "chevron-up" : "chevron-down"}
+            size={24}
+            color={COLORS.darkGreen}
+          />
         </View>
       </View>
-    </View>
+
+      {isExpanded && (
+        <View style={styles.expandedContent}>
+          <View style={styles.divider} />
+          
+          <Text style={styles.descriptionLabel}>About</Text>
+          <Text style={styles.cardDescription}>{description}</Text>
+
+          {(phone || email) && (
+            <View style={styles.contactSection}>
+              <Text style={styles.contactLabel}>Contact</Text>
+              {phone && (
+                <TouchableOpacity 
+                  style={styles.contactRow}
+                  onPress={() => handlePhoneCall(phone)}
+                >
+                  <MaterialCommunityIcons
+                    name="phone"
+                    size={16}
+                    color={COLORS.lightGreen}
+                  />
+                  <Text style={[styles.contactText, styles.contactLink]}>{phone}</Text>
+                </TouchableOpacity>
+              )}
+              {email && (
+                <TouchableOpacity 
+                  style={styles.contactRow}
+                  onPress={() => handleEmail(email)}
+                >
+                  <MaterialCommunityIcons
+                    name="email"
+                    size={16}
+                    color={COLORS.lightGreen}
+                  />
+                  <Text style={[styles.contactText, styles.contactLink]}>{email}</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          <TouchableOpacity 
+            style={styles.signUpButton}
+            onPress={handleSignUp}
+            disabled={!website}
+          >
+            <Text style={styles.signUpButtonText}>
+              {website ? 'Sign Up' : 'No Website Available'}
+            </Text>
+            {website && (
+              <MaterialCommunityIcons
+                name="arrow-right"
+                size={18}
+                color={COLORS.textLight}
+              />
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
+    </TouchableOpacity>
   );
 };
 
 export default function SearchScreen() {
+  const { user } = useAuth();
   const [distanceValue, setDistanceValue] = React.useState([5]); // miles
   const maxDistance = distanceValue[0];
 
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [loading, setLoading] = useState(true);
+  const [favorites, setFavorites] = useState<string[]>([]);
 
   const [userLocation, setUserLocation] = useState<{
     latitude: number;
     longitude: number;
   } | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
+
+  // Get user's favorites from Firestore
+  useEffect(() => {
+    if (!user) return;
+
+    const userDocRef = doc(db, 'UserInformation', user.uid);
+    
+    const unsubscribe = onSnapshot(
+      userDocRef,
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          setFavorites(data.favorites || []);
+        }
+      },
+      (error) => {
+        console.error('Error fetching user favorites:', error);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // Toggle favorite in Firestore
+  const toggleFavorite = async (opportunityId: string) => {
+    if (!user) return;
+
+    try {
+      const userDocRef = doc(db, 'UserInformation', user.uid);
+      
+      if (favorites.includes(opportunityId)) {
+        // Remove from favorites
+        await updateDoc(userDocRef, {
+          favorites: arrayRemove(opportunityId)
+        });
+      } else {
+        // Add to favorites
+        await updateDoc(userDocRef, {
+          favorites: arrayUnion(opportunityId)
+        });
+      }
+    } catch (error) {
+      console.error('Error toggling favorite:', error);
+    }
+  };
 
   // Get Firestore opportunities
   useEffect(() => {
@@ -184,7 +363,7 @@ export default function SearchScreen() {
     return () => unsubscribe();
   }, []);
 
-    // Get user location (with fallback)
+  // Get user location (with fallback)
   useEffect(() => {
     (async () => {
       try {
@@ -246,7 +425,6 @@ export default function SearchScreen() {
     })();
   }, []);
 
-
   const opportunitiesWithDistance: Opportunity[] = opportunities.map((opp) => {
     if (userLocation && opp.location) {
       const distance = haversineMiles(
@@ -272,7 +450,6 @@ export default function SearchScreen() {
 
         <Text style={styles.screenTitle}>Volunteer Near You</Text>
 
-        
         <View style={styles.sliderContainer}>
           <Slider
             value={distanceValue}
@@ -302,14 +479,19 @@ export default function SearchScreen() {
 
         {!loading && locationError && (
           <Text style={{ color: 'red', marginBottom: 10 }}>
-            {locationError} – showing opportunities without distance filtering.
+            {locationError} — showing opportunities without distance filtering.
           </Text>
         )}
 
         {!loading && (
           filteredOpportunities.length > 0 ? (
             filteredOpportunities.map((opportunity) => (
-              <OpportunityCard key={opportunity.id} {...opportunity} />
+              <OpportunityCard 
+                key={opportunity.id} 
+                {...opportunity}
+                isFavorited={favorites.includes(opportunity.id)}
+                onToggleFavorite={toggleFavorite}
+              />
             ))
           ) : (
             <Text style={styles.noResultsText}>
@@ -386,46 +568,127 @@ const styles = StyleSheet.create({
   },
 
   card: {
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: COLORS.card,
-    borderRadius: 15,
-    padding: 15,
-    marginBottom: 15,
+    borderRadius: 12,
+    padding: 18,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.lightGreen,
+    overflow: 'hidden',
   },
-  leafIcon: {
-    marginRight: 15,
+  cardExpanded: {
+    backgroundColor: '#e8d5ba',
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 5,
   },
-  cardContent: {
-    flex: 1,
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  cardDescription: {
-    fontSize: 14,
-    marginBottom: 5,
-  },
-  cardFooter: {
+  cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 5,
   },
-  cardDetail: {
-    fontSize: 12,
+  cardHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  cardHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  favoriteButton: {
+    padding: 4,
+  },
+  iconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#f5f0e8',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  cardHeaderText: {
+    flex: 1,
+  },
+  cardTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: COLORS.textDark,
+    marginBottom: 4,
+  },
+  distanceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  distanceText: {
+    fontSize: 13,
+    color: COLORS.lightGreen,
+    fontWeight: '600',
+  },
+  expandedContent: {
+    marginTop: 16,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#d4c4b0',
+    marginBottom: 16,
+  },
+  descriptionLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.darkGreen,
+    marginBottom: 8,
+  },
+  cardDescription: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#4a4a4a',
+    marginBottom: 16,
+  },
+  contactSection: {
+    marginBottom: 16,
+  },
+  contactLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.darkGreen,
+    marginBottom: 8,
+  },
+  contactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  contactText: {
+    fontSize: 13,
+    color: '#4a4a4a',
+  },
+  contactLink: {
+    textDecorationLine: 'underline',
   },
   signUpButton: {
-    backgroundColor: COLORS.lightGreen,
-    paddingHorizontal: 15,
-    paddingVertical: 5,
-    borderRadius: 20,
+    backgroundColor: COLORS.darkGreen,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
   },
   signUpButtonText: {
     color: COLORS.textLight,
-    fontWeight: 'bold',
-    fontSize: 12,
+    fontWeight: '700',
+    fontSize: 15,
   },
   noResultsText: {
     textAlign: 'center',
