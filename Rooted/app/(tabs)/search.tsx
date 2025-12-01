@@ -392,6 +392,7 @@ export default function SearchScreen() {
   const [loading, setLoading] = useState(true);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [isOrganization, setIsOrganization] = useState(false);
+  const [isApprovedOrganization, setIsApprovedOrganization] = useState(false);
 
   // Date picker state
   // Dropdown open states
@@ -522,26 +523,31 @@ export default function SearchScreen() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Check if user is an organization
-  useEffect(() => {
-    if (!user) return;
+// Check if user is an organization and if they're approved - with real-time updates
+useEffect(() => {
+  if (!user) return;
 
-    const checkAccountType = async () => {
-      try {
-        const userDocRef = doc(db, 'UserInformation', user.uid);
-        const userDoc = await getDoc(userDocRef);
+  const userDocRef = doc(db, 'UserInformation', user.uid);
 
-        if (userDoc.exists()) {
-          const data = userDoc.data();
-          setIsOrganization(data.accountType === 'organization');
-        }
-      } catch (error) {
-        console.error('Error checking account type:', error);
+  const unsubscribe = onSnapshot(
+    userDocRef,
+    (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        const isOrg = data.accountType === 'organization';
+        const isApproved = data.isApproved === true;
+        
+        setIsOrganization(isOrg);
+        setIsApprovedOrganization(isOrg && isApproved);
       }
-    };
+    },
+    (error) => {
+      console.error('Error checking account type:', error);
+    }
+  );
 
-    checkAccountType();
-  }, [user]);
+  return () => unsubscribe();
+}, [user]);
 
   // Get user's favorites from Firestore
   useEffect(() => {
@@ -908,16 +914,25 @@ export default function SearchScreen() {
         <Header />
 
         {isOrganization && (
-          <View style={styles.postButtonContainer}>
-            <TouchableOpacity
-              style={styles.postButton}
-              onPress={() => openPostModal()}
-            >
-              <MaterialCommunityIcons name="plus-circle" size={24} color={COLORS.textLight} />
-              <Text style={styles.postButtonText}>Post Opportunity</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+  <View style={styles.postButtonContainer}>
+    {isApprovedOrganization ? (
+      <TouchableOpacity
+        style={styles.postButton}
+        onPress={() => openPostModal()}
+      >
+        <MaterialCommunityIcons name="plus-circle" size={24} color={COLORS.textLight} />
+        <Text style={styles.postButtonText}>Post Opportunity</Text>
+      </TouchableOpacity>
+    ) : (
+      <View style={styles.pendingApprovalContainer}>
+        <MaterialCommunityIcons name="clock-outline" size={24} color={COLORS.darkGreen} />
+        <Text style={styles.pendingApprovalText}>
+          Your organization account is pending approval. You'll be able to post opportunities once approved by an administrator.
+        </Text>
+      </View>
+    )}
+  </View>
+)}
 
         <Text style={styles.screenTitle}>Volunteer Near You</Text>
 
@@ -1220,6 +1235,22 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 100,
   },
+  pendingApprovalContainer: {
+  backgroundColor: '#fff3cd',
+  flexDirection: 'row',
+  alignItems: 'center',
+  padding: 16,
+  borderRadius: 12,
+  gap: 12,
+  borderWidth: 1,
+  borderColor: '#ffc107',
+},
+pendingApprovalText: {
+  flex: 1,
+  color: COLORS.textDark,
+  fontSize: 14,
+  lineHeight: 20,
+},
 
   /* ---------- HEADER ---------- */
 

@@ -20,32 +20,72 @@ import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
 
 export default function SignUpScreen() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [accountType, setAccountType] = useState<'user' | 'organization'>('user');
   const [loading, setLoading] = useState(false);
 
-  const handleSignUp = async () => {
-    if (!email || !password || !confirmPassword) {
-      Alert.alert('Error', 'Please fill in all fields');
-      return;
+  // Common fields
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
+
+  // User-specific fields
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+
+  // Organization-specific fields
+  const [businessName, setBusinessName] = useState('');
+  const [contactFirstName, setContactFirstName] = useState('');
+  const [contactLastName, setContactLastName] = useState('');
+  const [website, setWebsite] = useState('');
+
+  const validateFields = () => {
+    if (!email || !password || !confirmPassword || !phoneNumber) {
+      Alert.alert('Error', 'Please fill in all required fields');
+      return false;
+    }
+
+    if (accountType === 'user') {
+      if (!firstName || !lastName) {
+        Alert.alert('Error', 'Please enter your first and last name');
+        return false;
+      }
+    } else {
+      if (!businessName || !contactFirstName || !contactLastName || !website) {
+        Alert.alert('Error', 'Please fill in all business information');
+        return false;
+      }
     }
 
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       Alert.alert('Error', 'Please enter a valid email address');
-      return;
+      return false;
     }
 
     if (password !== confirmPassword) {
       Alert.alert('Error', 'Passwords do not match');
-      return;
+      return false;
     }
 
     if (password.length < 6) {
       Alert.alert('Error', 'Password must be at least 6 characters');
+      return false;
+    }
+
+    // Validate phone number (basic validation)
+    const phoneRegex = /^[\d\s\-\(\)\+]+$/;
+    if (!phoneRegex.test(phoneNumber)) {
+      Alert.alert('Error', 'Please enter a valid phone number');
+      return false;
+    }
+
+    return true;
+  };
+
+  const handleSignUp = async () => {
+    if (!validateFields()) {
       return;
     }
 
@@ -54,12 +94,28 @@ export default function SignUpScreen() {
       // Create user account
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       
-      // Store account type in Firestore
-      await setDoc(doc(db, 'UserInformation', userCredential.user.uid), {
+      // Prepare user data based on account type
+      const userData: any = {
         email: email,
         accountType: accountType,
+        phoneNumber: phoneNumber,
         createdAt: new Date().toISOString(),
-      });
+      };
+
+      if (accountType === 'user') {
+        userData.firstName = firstName;
+        userData.lastName = lastName;
+        userData.isApproved = true;
+      } else {
+        userData.businessName = businessName;
+        userData.contactFirstName = contactFirstName;
+        userData.contactLastName = contactLastName;
+        userData.website = website;
+        userData.isApproved = false;
+      }
+      
+      // Store account data in Firestore
+      await setDoc(doc(db, 'UserInformation', userCredential.user.uid), userData);
       
       // Send verification email
       await sendEmailVerification(userCredential.user);
@@ -148,6 +204,80 @@ export default function SignUpScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* Conditional Fields Based on Account Type */}
+          {accountType === 'user' ? (
+            <>
+              <TextInput
+                style={styles.input}
+                placeholder="First Name"
+                placeholderTextColor={"#777"}
+                value={firstName}
+                onChangeText={setFirstName}
+                editable={!loading}
+              />
+
+              <TextInput
+                style={styles.input}
+                placeholder="Last Name"
+                placeholderTextColor={"#777"}
+                value={lastName}
+                onChangeText={setLastName}
+                editable={!loading}
+              />
+            </>
+          ) : (
+            <>
+              <TextInput
+                style={styles.input}
+                placeholder="Business Name"
+                placeholderTextColor={"#777"}
+                value={businessName}
+                onChangeText={setBusinessName}
+                editable={!loading}
+              />
+
+              <TextInput
+                style={styles.input}
+                placeholder="Contact First Name"
+                placeholderTextColor={"#777"}
+                value={contactFirstName}
+                onChangeText={setContactFirstName}
+                editable={!loading}
+              />
+
+              <TextInput
+                style={styles.input}
+                placeholder="Contact Last Name"
+                placeholderTextColor={"#777"}
+                value={contactLastName}
+                onChangeText={setContactLastName}
+                editable={!loading}
+              />
+
+              <TextInput
+                style={styles.input}
+                placeholder="Website"
+                placeholderTextColor={"#777"}
+                autoCapitalize="none"
+                keyboardType="url"
+                value={website}
+                onChangeText={setWebsite}
+                editable={!loading}
+              />
+            </>
+          )}
+
+          {/* Common Fields */}
+          <TextInput
+            style={styles.input}
+            placeholder="Phone Number"
+            placeholderTextColor={"#777"}
+            keyboardType="phone-pad"
+            value={phoneNumber}
+            onChangeText={setPhoneNumber}
+            editable={!loading}
+          />
+
           <TextInput
             style={styles.input}
             placeholder="Email"
@@ -212,6 +342,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
     paddingHorizontal: 30,
+    paddingVertical: 40,
   },
   backButton: {
     position: 'absolute',
