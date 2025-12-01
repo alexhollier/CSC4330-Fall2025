@@ -21,10 +21,14 @@ import {
   updateDoc,
   arrayRemove,
   arrayUnion,
+  deleteDoc,
+  getDoc,
 } from "firebase/firestore";
 import { db } from "../../firebaseConfig";
 import { useAuth } from "../../contexts/AuthContext";
 import Svg, { Circle } from "react-native-svg";
+import { signOut } from 'firebase/auth';
+import { auth } from '../../firebaseConfig';
 
 const COLORS = {
   background: "#fcfaf0",
@@ -44,6 +48,8 @@ type FavoriteOpportunity = {
   phone?: string;
   website?: string;
   distance?: number;
+  eventDate?: string;
+  eventTime?: string;
 };
 
 type Organization = {
@@ -53,21 +59,215 @@ type Organization = {
   frequency?: 'weekly' | 'monthly' | 'semesterly' | 'yearly';
 };
 
+type OrganizationOpportunity = {
+  id: string;
+  title: string;
+  description: string;
+  email?: string;
+  phone?: string;
+  website?: string;
+  eventDate?: string;
+  eventTime?: string;
+  eventType: 'ongoing' | 'upcoming';
+  attendeeCount: number;
+  location?: {
+    latitude: number;
+    longitude: number;
+  };
+};
+
 // --- New Types for Edit Logic ---
 type EditMode = "add" | "remove" | "required" | "name" | null;
 
 
-const UpcomingEventCard = ({ event }: { event: string }) => (
-  <View style={styles.upcomingCard}>
-    <Logo
-      name="calendar-check"
-      size={24}
-      color={COLORS.lightGreen}
-      style={styles.iconMarginRight}
-    />
-    <Text style={styles.upcomingText}>{event}</Text>
-  </View>
-);
+const UpcomingEventCard = ({ 
+  event,
+  onUnregister 
+}: { 
+  event: FavoriteOpportunity;
+  onUnregister: (id: string) => void;
+}) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const handleSignUp = async () => {
+    if (event.website) {
+      let url = event.website.startsWith("http")
+        ? event.website
+        : `https://${event.website}`;
+
+      const supported = await Linking.canOpenURL(url);
+      if (supported) Linking.openURL(url);
+    }
+  };
+
+  const handlePhoneCall = async (phoneNumber: string) => {
+    try {
+      const cleanedNumber = phoneNumber.replace(/[^\d+]/g, '');
+      const url = `tel:${cleanedNumber}`;
+      const supported = await Linking.canOpenURL(url);
+      if (supported) {
+        await Linking.openURL(url);
+      }
+    } catch (error) {
+      console.error('Error opening phone:', error);
+    }
+  };
+
+  const handleEmail = async (emailAddress: string) => {
+    try {
+      const url = `mailto:${emailAddress}`;
+      const supported = await Linking.canOpenURL(url);
+      if (supported) {
+        await Linking.openURL(url);
+      }
+    } catch (error) {
+      console.error('Error opening email:', error);
+    }
+  };
+
+  return (
+    <TouchableOpacity
+      style={[
+        styles.upcomingCard,
+        isExpanded && styles.cardExpanded,
+      ]}
+      onPress={() => setIsExpanded(!isExpanded)}
+      activeOpacity={0.85}
+    >
+      <View style={styles.cardHeader}>
+        <View style={styles.cardHeaderLeft}>
+          <View style={styles.iconCircle}>
+            <Logo
+              name="calendar-check"
+              size={24}
+              color={COLORS.darkGreen}
+            />
+          </View>
+
+          <View style={styles.cardHeaderText}>
+            <Text style={styles.cardTitle}>{event.title}</Text>
+            
+            {/* Date/Time Section - Always visible */}
+            {event.eventDate && (
+              <View style={styles.dateRow}>
+                <Logo
+                  name="calendar"
+                  size={14}
+                  color={COLORS.lightGreen}
+                  style={styles.iconTinyMarginRight}
+                />
+                <Text style={styles.dateText}>
+                  {event.eventDate}
+                  {event.eventTime ? ` • ${event.eventTime}` : ''}
+                </Text>
+              </View>
+            )}
+          </View>
+        </View>
+
+        <View style={styles.cardHeaderRight}>
+          <Logo
+            name={isExpanded ? "chevron-up" : "chevron-down"}
+            size={24}
+            color={COLORS.darkGreen}
+          />
+        </View>
+      </View>
+
+      {isExpanded && (
+        <View style={styles.expandedContent}>
+          <View style={styles.divider} />
+
+          <Text style={styles.descriptionLabel}>About</Text>
+          <Text style={styles.cardDescription}>{event.description}</Text>
+
+          {(event.phone || event.email) && (
+            <View style={styles.contactSection}>
+              <Text style={styles.contactLabel}>Contact</Text>
+
+              {event.phone && (
+                <TouchableOpacity 
+                  style={styles.contactRow}
+                  onPress={() => handlePhoneCall(event.phone!)}
+                >
+                  <Logo
+                    name="phone"
+                    size={16}
+                    color={COLORS.lightGreen}
+                    style={styles.iconTinyMarginRight}
+                  />
+                  <Text style={[styles.contactText, styles.contactLink]}>
+                    {event.phone}
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {event.email && (
+                <TouchableOpacity 
+                  style={styles.contactRow}
+                  onPress={() => handleEmail(event.email!)}
+                >
+                  <Logo
+                    name="email"
+                    size={16}
+                    color={COLORS.lightGreen}
+                    style={styles.iconTinyMarginRight}
+                  />
+                  <Text style={[styles.contactText, styles.contactLink]}>
+                    {event.email}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {/* Unregister Button */}
+          <TouchableOpacity
+            style={styles.unregisterButton}
+            onPress={() => onUnregister(event.id)}
+          >
+            <Logo
+              name="calendar-remove"
+              size={18}
+              color={COLORS.textLight}
+            />
+            <Text style={styles.unregisterButtonText}>
+              Unregister Attendance
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.signUpButton,
+              !event.website && styles.signUpButtonDisabled,
+            ]}
+            disabled={!event.website}
+            onPress={handleSignUp}
+          >
+            <Text
+              style={[
+                styles.signUpButtonText,
+                event.website && { marginRight: 8 },
+              ]}
+            >
+              {event.website ? "Sign Up" : "No Website Available"}
+            </Text>
+
+            {event.website && (
+              <Logo
+                name="arrow-right"
+                size={18}
+                color={COLORS.textLight}
+              />
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+};
+
+
 
 const FavoriteCard = ({
   id,
@@ -221,6 +421,31 @@ const FavoriteCard = ({
   );
 };
 
+const handleSignOut = async () => {
+  Alert.alert(
+    'Sign Out',
+    'Are you sure you want to sign out?',
+    [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign Out',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await signOut(auth);
+            // Navigation will be handled automatically by your auth context
+          } catch (error) {
+            console.error('Error signing out:', error);
+            Alert.alert('Error', 'Failed to sign out. Please try again.');
+          }
+        },
+      },
+    ]
+  );
+};
+
+
+
 // -------------------------------------------------------
 // ORGANIZATION EDIT LOGIC (FIRESTORE)
 // -------------------------------------------------------
@@ -229,10 +454,15 @@ export default function Index() {
   const { user } = useAuth();
   const navigation = useNavigation();
 
+  const [accountType, setAccountType] = useState<'user' | 'organization'>('user');
+
   // tabs
   const [activeTab, setActiveTab] = useState<
-    "overview" | "favorites" | "organizations"
+    "overview" | "favorites" | "organizations" | "youropportunities"
   >("overview");
+
+  const [organizationOpportunities, setOrganizationOpportunities] = useState<OrganizationOpportunity[]>([]);
+  const [loadingOpportunities, setLoadingOpportunities] = useState(true);
 
   // favorites
   const [favoriteOpportunities, setFavoriteOpportunities] =
@@ -266,6 +496,133 @@ export default function Index() {
   const hoursCompleted = 15;
   const hoursGoal = 30;
   const weeklyHours = 3;
+
+  // Add state for upcoming events
+  const [upcomingEvents, setUpcomingEvents] = useState<FavoriteOpportunity[]>([]);
+
+const handleUnregisterAttendance = async (opportunityId: string) => {
+  if (!user) return;
+
+  Alert.alert(
+    'Unregister Attendance',
+    'Are you sure you want to unregister from this event?',
+    [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Unregister',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            const oppDocRef = doc(db, 'VolunteerOpportunity', opportunityId);
+            await updateDoc(oppDocRef, {
+              attendees: arrayRemove(user.uid)
+            });
+          } catch (error) {
+            console.error('Error unregistering attendance:', error);
+            Alert.alert('Error', 'Failed to unregister. Please try again.');
+          }
+        },
+      },
+    ]
+  );
+};
+
+  // Add useEffect to fetch upcoming events user is attending
+  useEffect(() => {
+  if (!user) return;
+
+  const oppRef = collection(db, 'VolunteerOpportunity');
+  
+  const unsubscribe = onSnapshot(oppRef, (snapshot) => {
+    const events: FavoriteOpportunity[] = [];
+    
+    snapshot.docs.forEach((doc) => {
+      const data = doc.data();
+      const attendees = data.attendees || [];
+      
+      if (attendees.includes(user.uid) && data.eventType === 'upcoming') {
+        events.push({
+          id: doc.id,
+          title: data.Business,
+          description: data.Description,
+          email: data.Email,
+          phone: data.Phone,
+          website: data.Website,
+          eventDate: data.eventDate,
+          eventTime: data.eventTime,
+        });
+      }
+    });
+    
+    setUpcomingEvents(events);
+  });
+
+  return () => unsubscribe();
+}, [user]);
+
+  // Check account type and load organization opportunities
+  useEffect(() => {
+    if (!user) return;
+
+    const checkAccountType = async () => {
+      try {
+        const userDocRef = doc(db, "UserInformation", user.uid);
+        const userDoc = await getDoc(userDocRef);
+
+        if (userDoc.exists()) {
+          const data = userDoc.data();
+          const isOrg = data.accountType === 'organization';
+          setAccountType(isOrg ? 'organization' : 'user');
+          
+          // Set default tab for organizations
+          if (isOrg) {
+            setActiveTab("youropportunities");
+          }
+        }
+      } catch (error) {
+        console.error('Error checking account type:', error);
+      }
+    };
+
+    checkAccountType();
+  }, [user]);
+
+  // Load organization's posted opportunities
+  useEffect(() => {
+    if (!user || accountType !== 'organization') return;
+
+    const oppRef = collection(db, 'VolunteerOpportunity');
+    
+    const unsubscribe = onSnapshot(oppRef, (snapshot) => {
+      const opportunities: OrganizationOpportunity[] = [];
+      
+      snapshot.docs.forEach((doc) => {
+        const data = doc.data();
+        
+        // Only show opportunities posted by this organization
+        if (data.postedBy === user.uid) {
+          opportunities.push({
+            id: doc.id,
+            title: data.Business,
+            description: data.Description,
+            email: data.Email,
+            phone: data.Phone,
+            website: data.Website,
+            eventDate: data.eventDate,
+            eventTime: data.eventTime,
+            eventType: data.eventType || 'ongoing',
+            attendeeCount: data.attendees ? data.attendees.length : 0,
+            location: data.Location,
+          });
+        }
+      });
+      
+      setOrganizationOpportunities(opportunities);
+      setLoadingOpportunities(false);
+    });
+
+    return () => unsubscribe();
+  }, [user, accountType]);
 
   // -------------------------
   // FIRESTORE — load user doc
@@ -317,6 +674,202 @@ export default function Index() {
     return () => unsubscribe();
   }, [user]);
 
+    // Handle delete opportunity
+  const handleDeleteOpportunity = async (opportunityId: string) => {
+    Alert.alert(
+      'Delete Opportunity',
+      'Are you sure you want to delete this opportunity?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteDoc(doc(db, 'VolunteerOpportunity', opportunityId));
+              Alert.alert('Success', 'Opportunity deleted successfully');
+            } catch (error) {
+              console.error('Error deleting opportunity:', error);
+              Alert.alert('Error', 'Failed to delete opportunity');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Handle edit opportunity - navigate to search screen with edit mode
+  const handleEditOpportunity = (opportunity: OrganizationOpportunity) => {
+  (navigation as any).navigate('search', { 
+    editOpportunity: opportunity 
+  });
+};
+
+
+    // Organization Opportunity Card Component
+  const OrganizationOpportunityCard = ({ 
+    opportunity 
+  }: { 
+    opportunity: OrganizationOpportunity 
+  }) => {
+    const [isExpanded, setIsExpanded] = useState(false);
+
+    return (
+      <TouchableOpacity
+        style={[
+          styles.orgOpportunityCard,
+          isExpanded && styles.cardExpanded,
+        ]}
+        onPress={() => setIsExpanded(!isExpanded)}
+        activeOpacity={0.85}
+      >
+        <View style={styles.cardHeader}>
+          <View style={styles.cardHeaderLeft}>
+            <View style={styles.iconCircle}>
+              <Logo
+                name="hand-heart"
+                size={24}
+                color={COLORS.darkGreen}
+              />
+            </View>
+
+            <View style={styles.cardHeaderText}>
+              <Text style={styles.cardTitle}>{opportunity.title}</Text>
+              
+              <View style={styles.opportunityMeta}>
+                <Text style={styles.opportunityType}>
+                  {opportunity.eventType === 'upcoming' ? 'Upcoming Event' : 'Ongoing Opportunity'}
+                </Text>
+                
+                <View style={styles.attendeeCount}>
+                  <Logo
+                    name="account-group"
+                    size={14}
+                    color={COLORS.lightGreen}
+                  />
+                  <Text style={styles.attendeeCountText}>
+                    {opportunity.attendeeCount} attending
+                  </Text>
+                </View>
+              </View>
+
+              {/* Date/Time Section */}
+              {opportunity.eventDate && (
+                <View style={styles.dateRow}>
+                  <Logo
+                    name="calendar"
+                    size={14}
+                    color={COLORS.lightGreen}
+                    style={styles.iconTinyMarginRight}
+                  />
+                  <Text style={styles.dateText}>
+                    {opportunity.eventDate}
+                    {opportunity.eventTime ? ` • ${opportunity.eventTime}` : ''}
+                  </Text>
+                </View>
+              )}
+            </View>
+          </View>
+
+          <View style={styles.cardHeaderRight}>
+            <Logo
+              name={isExpanded ? "chevron-up" : "chevron-down"}
+              size={24}
+              color={COLORS.darkGreen}
+            />
+          </View>
+        </View>
+
+        {isExpanded && (
+          <View style={styles.expandedContent}>
+            <View style={styles.divider} />
+
+            <Text style={styles.descriptionLabel}>About</Text>
+            <Text style={styles.cardDescription}>{opportunity.description}</Text>
+
+            {(opportunity.phone || opportunity.email) && (
+              <View style={styles.contactSection}>
+                <Text style={styles.contactLabel}>Contact Information</Text>
+
+                {opportunity.phone && (
+                  <View style={styles.contactRow}>
+                    <Logo
+                      name="phone"
+                      size={16}
+                      color={COLORS.lightGreen}
+                      style={styles.iconTinyMarginRight}
+                    />
+                    <Text style={styles.contactText}>
+                      {opportunity.phone}
+                    </Text>
+                  </View>
+                )}
+
+                {opportunity.email && (
+                  <View style={styles.contactRow}>
+                    <Logo
+                      name="email"
+                      size={16}
+                      color={COLORS.lightGreen}
+                      style={styles.iconTinyMarginRight}
+                    />
+                    <Text style={styles.contactText}>
+                      {opportunity.email}
+                    </Text>
+                  </View>
+                )}
+
+                {opportunity.website && (
+                  <View style={styles.contactRow}>
+                    <Logo
+                      name="web"
+                      size={16}
+                      color={COLORS.lightGreen}
+                      style={styles.iconTinyMarginRight}
+                    />
+                    <Text style={styles.contactText}>
+                      {opportunity.website}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* Edit and Delete Buttons */}
+            <View style={styles.orgOpportunityActions}>
+              <TouchableOpacity
+                style={styles.editOpportunityButton}
+                onPress={() => handleEditOpportunity(opportunity)}
+              >
+                <Logo
+                  name="pencil"
+                  size={18}
+                  color={COLORS.textLight}
+                />
+                <Text style={styles.editOpportunityButtonText}>
+                  Edit
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.deleteOpportunityButton}
+                onPress={() => handleDeleteOpportunity(opportunity.id)}
+              >
+                <Logo
+                  name="delete"
+                  size={18}
+                  color={COLORS.textLight}
+                />
+                <Text style={styles.deleteOpportunityButtonText}>
+                  Delete
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+      </TouchableOpacity>
+    );
+  };
   // -------------------------------------------------------
   // FAVORITES
   // -------------------------------------------------------
@@ -341,8 +894,8 @@ export default function Index() {
     const parsedRequired = required ? parseInt(required) : undefined;
 
     if (required && (isNaN(parsedRequired!) || parsedRequired! < 0)) {
-        Alert.alert("Error", "Required hours must be a non-negative number.");
-        return;
+      Alert.alert("Error", "Required hours must be a non-negative number.");
+      return;
     }
 
     const newOrg: Organization = {
@@ -404,11 +957,11 @@ export default function Index() {
       setHourInputValue(required);
       // Set current frequency or default
       setSelectedFrequency(editTarget.frequency || 'weekly');
-    } 
+    }
 
     // Close the mode selection modal and open the hour input modal
     setShowHourInputModal(true);
-    setEditTarget(editTarget); 
+    setEditTarget(editTarget);
   };
 
 
@@ -425,7 +978,7 @@ export default function Index() {
       Alert.alert("Error", "Please enter a valid, non-negative number of hours.");
       return;
     }
-    
+
     // Immediately close the input modal
     setShowHourInputModal(false);
 
@@ -442,8 +995,8 @@ export default function Index() {
         };
       }
       if (editMode === "required") {
-        return { 
-          ...org, 
+        return {
+          ...org,
           requiredHours: hours,
           frequency: selectedFrequency // Save the frequency
         };
@@ -478,7 +1031,7 @@ export default function Index() {
       Alert.alert("Error", "Organization name cannot be empty.");
       return;
     }
-    
+
     // Immediately close the input modal
     setShowNameInputModal(false);
 
@@ -506,30 +1059,30 @@ export default function Index() {
   // -------------------------------------------------------
 
   const handleDeleteOrg = async (name: string) => {
-  if (!user) return;
+    if (!user) return;
 
-  Alert.alert(
-    "Delete Organization",
-    `Are you sure you want to delete "${name}"? This cannot be undone.`,
-    [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          const updated = organizations.filter((o) => o.name !== name);
-          try {
-            await updateDoc(doc(db, "UserInformation", user.uid), {
-              organizations: updated,
-            });
-          } catch (err) {
-            console.error("Delete org error:", err);
-          }
+    Alert.alert(
+      "Delete Organization",
+      `Are you sure you want to delete "${name}"? This cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            const updated = organizations.filter((o) => o.name !== name);
+            try {
+              await updateDoc(doc(db, "UserInformation", user.uid), {
+                organizations: updated,
+              });
+            } catch (err) {
+              console.error("Delete org error:", err);
+            }
+          },
         },
-      },
-    ]
-  );
-};
+      ]
+    );
+  };
 
   // -------------------------------------------------------
   // ORGANIZATION CARD
@@ -591,136 +1144,14 @@ export default function Index() {
 
   // Determine the title and placeholder for the hour input modal
   const inputTitle = editTarget
-    ? editMode === 'required' 
+    ? editMode === 'required'
       ? `Set Required Hours for ${editTarget.name}`
-      : editMode === 'add' 
+      : editMode === 'add'
         ? `Add Hours to ${editTarget.name}`
         : `Remove Hours from ${editTarget.name}`
     : 'Edit Hours';
 
   const inputPlaceholder = editMode === 'required' ? 'Required Hours' : 'Number of Hours';
-
-  const handleSignOut = async () => {
-    Alert.alert(
-      'Sign Out',
-      'Are you sure you want to sign out?',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Sign Out',
-          onPress: async () => {
-            try {
-              await signOut(auth);
-              console.log('User signed out successfully');
-            } catch (error) {
-              console.error('Error signing out:', error);
-              Alert.alert('Error', 'Failed to sign out. Please try again.');
-            }
-          },
-          style: 'destructive',
-        },
-      ]
-    );
-  };
-
-  const handleEditProfile = () => {
-    setEditOption(null);
-    setEditModalVisible(true);
-  };
-
-  const openEditOption = (option: 'name' | 'organizations' | 'password') => {
-    setEditOption(option);
-    if (option === 'name') {
-      setEditName(userData.name);
-    } else if (option === 'organizations') {
-      setEditOrganizations([...userData.organizations]);
-      setNewOrgName('');
-      setNewOrgHours('');
-    }
-  };
-
-  const addOrganization = () => {
-    if (newOrgName.trim() && newOrgHours.trim()) {
-      setEditOrganizations([...editOrganizations, { name: newOrgName, hours: newOrgHours }]);
-      setNewOrgName('');
-      setNewOrgHours('');
-    } else {
-      Alert.alert('Error', 'Please enter both organization name and hours');
-    }
-  };
-
-  const removeOrganization = (index: number) => {
-    setEditOrganizations(editOrganizations.filter((_, i) => i !== index));
-  };
-
-  const updateOrganization = (index: number, field: 'name' | 'hours', value: string) => {
-    const updated = [...editOrganizations];
-    updated[index][field] = value;
-    setEditOrganizations(updated);
-  };
-
-  const saveName = async () => {
-    if (!editName.trim()) {
-      Alert.alert('Error', 'Name cannot be empty');
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const currentUser = auth.currentUser;
-      if (currentUser) {
-        const userDocRef = doc(db, 'UserInformation', currentUser.uid);
-        await updateDoc(userDocRef, { name: editName });
-        setUserData({ ...userData, name: editName });
-        Alert.alert('Success', 'Name updated successfully');
-        setEditModalVisible(false);
-      }
-    } catch (error) {
-      console.error('Error updating name:', error);
-      Alert.alert('Error', 'Failed to update name. Please try again.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const saveOrganizations = async () => {
-    setSaving(true);
-    try {
-      const currentUser = auth.currentUser;
-      if (currentUser) {
-        // Convert organizations back to "Name: Hours" format
-        const orgStrings = editOrganizations.map(org => `${org.name}: ${org.hours}`);
-        
-        const userDocRef = doc(db, 'UserInformation', currentUser.uid);
-        await updateDoc(userDocRef, { Organizations: orgStrings });
-        setUserData({ ...userData, organizations: editOrganizations });
-        Alert.alert('Success', 'Organizations updated successfully');
-        setEditModalVisible(false);
-      }
-    } catch (error) {
-      console.error('Error updating organizations:', error);
-      Alert.alert('Error', 'Failed to update organizations. Please try again.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const sendPasswordReset = async () => {
-    try {
-      const currentUser = auth.currentUser;
-      if (currentUser?.email) {
-        await sendPasswordResetEmail(auth, currentUser.email);
-        Alert.alert('Success', 'Password reset email sent to ' + currentUser.email);
-        setEditModalVisible(false);
-      }
-    } catch (error) {
-      console.error('Error sending password reset:', error);
-      Alert.alert('Error', 'Failed to send password reset email. Please try again.');
-    }
-  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -736,71 +1167,161 @@ export default function Index() {
             />
             <Text style={styles.logoText}>ROOTED</Text>
           </View>
-
+          <Text style={styles.accountTypeBadge}>
+            {accountType === 'organization' ? 'Organization Account' : 'Volunteer Account'}
+          </Text>
         </View>
 
-        {/* TABS */}
-        <View style={styles.tabContainer}>
-          <TouchableOpacity
-            style={[
-              styles.tab,
-              activeTab === "overview" && styles.activeTab,
-            ]}
-            onPress={() => setActiveTab("overview")}
-          >
-            <Text
+        {/* TABS - Conditionally render based on account type */}
+        {accountType === 'user' ? (
+          <View style={styles.tabContainer}>
+            <TouchableOpacity
               style={[
-                styles.tabText,
-                activeTab === "overview" && styles.activeTabText,
+                styles.tab,
+                activeTab === "overview" && styles.activeTab,
               ]}
+              onPress={() => setActiveTab("overview")}
             >
-              Overview
-            </Text>
-          </TouchableOpacity>
+              <Text
+                style={[
+                  styles.tabText,
+                  activeTab === "overview" && styles.activeTabText,
+                ]}
+              >
+                Overview
+              </Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[
-              styles.tab,
-              activeTab === "favorites" && styles.activeTab,
-            ]}
-            onPress={() => setActiveTab("favorites")}
-          >
-            <Text
+            <TouchableOpacity
               style={[
-                styles.tabText,
-                activeTab === "favorites" && styles.activeTabText,
+                styles.tab,
+                activeTab === "favorites" && styles.activeTab,
               ]}
+              onPress={() => setActiveTab("favorites")}
             >
-              Favorites
-            </Text>
-          </TouchableOpacity>
+              <Text
+                style={[
+                  styles.tabText,
+                  activeTab === "favorites" && styles.activeTabText,
+                ]}
+              >
+                Favorites
+              </Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[
-              styles.tab,
-              activeTab === "organizations" && styles.activeTab,
-            ]}
-            onPress={() => setActiveTab("organizations")}
-          >
-            <Text
+            <TouchableOpacity
               style={[
-                styles.tabText,
-                activeTab === "organizations" && styles.activeTabText,
+                styles.tab,
+                activeTab === "organizations" && styles.activeTab,
               ]}
+              onPress={() => setActiveTab("organizations")}
             >
-              Organizations
-            </Text>
-          </TouchableOpacity>
-        </View>
+              <Text
+                style={[
+                  styles.tabText,
+                  activeTab === "organizations" && styles.activeTabText,
+                ]}
+              >
+                Organizations
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          // Organization tabs - only "Your Opportunities"
+          <View style={styles.tabContainer}>
+            <TouchableOpacity
+              style={[
+                styles.tab,
+                activeTab === "youropportunities" && styles.activeTab,
+              ]}
+              onPress={() => setActiveTab("youropportunities")}
+            >
+              <Text
+                style={[
+                  styles.tabText,
+                  activeTab === "youropportunities" && styles.activeTabText,
+                ]}
+              >
+                Your Opportunities
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* YOUR OPPORTUNITIES TAB - For Organizations */}
+        {activeTab === "youropportunities" && accountType === 'organization' && (
+          <View style={styles.tabContent}>
+            <Text style={styles.sectionTitle}>Your Posted Opportunities</Text>
+
+            {loadingOpportunities ? (
+              <Text style={styles.emptyText}>Loading your opportunities...</Text>
+            ) : organizationOpportunities.length > 0 ? (
+              organizationOpportunities.map((opportunity) => (
+                <View key={opportunity.id} style={styles.orgOpportunityCardContainer}>
+                  <OrganizationOpportunityCard opportunity={opportunity} />
+                </View>
+              ))
+            ) : (
+              <View style={styles.emptyState}>
+                <Logo
+                  name="hand-heart-outline"
+                  size={64}
+                  color={COLORS.tabInactive}
+                />
+                <Text style={styles.emptyText}>No opportunities posted yet</Text>
+                <Text style={styles.emptySubtext}>
+                  Create your first volunteer opportunity to get started!
+                </Text>
+                <TouchableOpacity 
+                  style={styles.findOpportunitiesButton}
+                    onPress={() => (navigation as any).navigate('search')}
+                >
+                  <Logo
+                    name="plus-circle"
+                    size={24}
+                    color={COLORS.textLight}
+                    style={styles.iconMarginRight}
+                  />
+                  <Text style={styles.findOpportunitiesText}>
+                    Post Opportunity
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        )}
 
         {/* OVERVIEW */}
-        {activeTab === "overview" && (
+        {activeTab === "overview" && accountType === 'user' && (
           <View style={styles.tabContent}>
             <Text style={styles.sectionTitle}>Upcoming Events</Text>
 
+            {upcomingEvents.length > 0 ? (
+              upcomingEvents.map((event) => (
+                <View key={event.id} style={styles.upcomingCardContainer}>
+                  <UpcomingEventCard 
+                    event={event} 
+                    onUnregister={handleUnregisterAttendance}
+                  />
+                </View>
+              ))
+            ) : (
+              <View style={styles.emptyState}>
+                <Logo
+                  name="calendar-alert"
+                  size={64}
+                  color={COLORS.tabInactive}
+                />
+                <Text style={styles.emptyText}>No Upcoming Events</Text>
+                <Text style={styles.emptySubtext}>
+                  Find volunteer opportunities and confirm your attendance to see them here!
+                </Text>
+              </View>
+            )}
+
             <TouchableOpacity 
-            style={styles.findOpportunitiesButton}
-            onPress={() => navigation.navigate('search' as never)}
+              style={styles.findOpportunitiesButton}
+                onPress={() => (navigation as any).navigate('search')}
             >
               <Logo
                 name="magnify"
@@ -811,13 +1332,12 @@ export default function Index() {
               <Text style={styles.findOpportunitiesText}>
                 Find Opportunities
               </Text>
-              
             </TouchableOpacity>
           </View>
         )}
 
         {/* FAVORITES */}
-        {activeTab === "favorites" && (
+        {activeTab === "favorites" && accountType === 'user' && (
           <View style={styles.tabContent}>
             {loadingFavorites ? (
               <Text style={styles.emptyText}>Loading...</Text>
@@ -847,7 +1367,7 @@ export default function Index() {
         )}
 
         {/* ORGANIZATIONS */}
-        {activeTab === "organizations" && (
+        {activeTab === "organizations" && accountType === 'user' && (
           <View style={styles.tabContent}>
             {organizations.map((org, idx) => (
               <OrganizationCard
@@ -874,6 +1394,20 @@ export default function Index() {
             </TouchableOpacity>
           </View>
         )}
+
+        {/* Sign Out Button */}
+        <TouchableOpacity 
+          style={styles.signOutButton}
+          onPress={handleSignOut}
+        >
+          <Logo
+            name="logout"
+            size={24}
+            color="#ff4444"
+            style={styles.iconMarginRight}
+          />
+          <Text style={styles.signOutButtonText}>Sign Out</Text>
+        </TouchableOpacity>
       </ScrollView>
 
       {/* ADD ORG MODAL */}
@@ -940,7 +1474,7 @@ export default function Index() {
                   setNewOrgFrequency('weekly');
                 }}
               >
-                <Text style={styles.cancelButtonText}>Cancel</Text> 
+                <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -970,7 +1504,7 @@ export default function Index() {
               style={styles.editModeButton}
               onPress={() => handleSelectEditMode("name")}
             >
-              <Logo name="text" size={20} color={COLORS.darkGreen} style={styles.iconMarginRight}/>
+              <Logo name="text" size={20} color={COLORS.darkGreen} style={styles.iconMarginRight} />
               <Text style={styles.editModeButtonText}>Edit Name</Text>
             </TouchableOpacity>
 
@@ -979,7 +1513,7 @@ export default function Index() {
               style={styles.editModeButton}
               onPress={() => handleSelectEditMode("add")}
             >
-              <Logo name="plus-circle" size={20} color={COLORS.darkGreen} style={styles.iconMarginRight}/>
+              <Logo name="plus-circle" size={20} color={COLORS.darkGreen} style={styles.iconMarginRight} />
               <Text style={styles.editModeButtonText}>Add Hours</Text>
             </TouchableOpacity>
 
@@ -987,7 +1521,7 @@ export default function Index() {
               style={styles.editModeButton}
               onPress={() => handleSelectEditMode("remove")}
             >
-              <Logo name="minus-circle" size={20} color={COLORS.darkGreen} style={styles.iconMarginRight}/>
+              <Logo name="minus-circle" size={20} color={COLORS.darkGreen} style={styles.iconMarginRight} />
               <Text style={styles.editModeButtonText}>Remove Hours</Text>
             </TouchableOpacity>
 
@@ -995,15 +1529,15 @@ export default function Index() {
               style={styles.editModeButton}
               onPress={() => handleSelectEditMode("required")}
             >
-              <Logo name="target" size={20} color={COLORS.darkGreen} style={styles.iconMarginRight}/>
+              <Logo name="target" size={20} color={COLORS.darkGreen} style={styles.iconMarginRight} />
               <Text style={styles.editModeButtonText}>Edit Required Hours</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton, styles.marginTop12]}
-                onPress={() => setEditTarget(null)}
+              style={[styles.modalButton, styles.cancelButton, styles.marginTop12]}
+              onPress={() => setEditTarget(null)}
             >
-                <Text style={styles.cancelButtonText}>Cancel</Text> 
+              <Text style={styles.cancelButtonText}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1040,7 +1574,7 @@ export default function Index() {
                   setEditTarget(null);
                 }}
               >
-                <Text style={styles.cancelButtonText}>Cancel</Text> 
+                <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -1114,7 +1648,7 @@ export default function Index() {
                   setEditTarget(null);
                 }}
               >
-                <Text style={styles.cancelButtonText}>Cancel</Text> 
+                <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -1136,6 +1670,147 @@ export default function Index() {
 // -------------------------------------------------------
 
 const styles = StyleSheet.create({
+  accountTypeBadge: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.darkGreen,
+    backgroundColor: '#f0f5e6',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+
+  orgOpportunityCardContainer: {
+    marginBottom: 16,
+  },
+
+  orgOpportunityCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 12,
+    padding: 18,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 4,
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.darkGreen,
+  },
+
+  opportunityMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+
+  opportunityType: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.darkGreen,
+    backgroundColor: '#f0f5e6',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+
+  attendeeCount: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+
+  attendeeCountText: {
+    fontSize: 12,
+    color: COLORS.lightGreen,
+    fontWeight: '600',
+  },
+
+  orgOpportunityActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 16,
+    gap: 12,
+  },
+
+  editOpportunityButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.lightGreen,
+    paddingVertical: 12,
+    borderRadius: 10,
+    gap: 8,
+  },
+
+  editOpportunityButtonText: {
+    color: COLORS.textLight,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+
+  deleteOpportunityButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#b83f3f',
+    paddingVertical: 12,
+    borderRadius: 10,
+    gap: 8,
+  },
+
+  deleteOpportunityButtonText: {
+    color: COLORS.textLight,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  unregisterButton: {
+  marginTop: 10,
+  flexDirection: 'row',
+  justifyContent: 'center',
+  alignItems: 'center',
+  backgroundColor: '#b83f3f',
+  paddingVertical: 10,
+  borderRadius: 10,
+  gap: 8,
+  marginBottom: 10,
+},
+unregisterButtonText: {
+  color: COLORS.textLight,
+  fontSize: 16,
+  fontWeight: '700',
+},
+dateRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  marginTop: 4,
+},
+dateText: {
+  fontSize: 13,
+  color: COLORS.lightGreen,
+  fontWeight: '600',
+},
+  signOutButton: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'center',
+  backgroundColor: '#fff0f0',
+  padding: 18,
+  borderRadius: 12,
+  marginTop: 40,
+  marginHorizontal: 20,
+  marginBottom: 40,
+  borderWidth: 1,
+  borderColor: '#ffcccc',
+},
+signOutButtonText: {
+  fontSize: 16,
+  fontWeight: '700',
+  color: '#ff4444',
+},
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
@@ -1227,15 +1902,24 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   upcomingCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: COLORS.card,
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.lightGreen,
-  },
+  backgroundColor: COLORS.card,
+  borderRadius: 12,
+  padding: 18,
+  shadowColor: "#000",
+  shadowOffset: { width: 0, height: 3 },
+  shadowOpacity: 0.12,
+  shadowRadius: 6,
+  elevation: 4,
+  borderLeftWidth: 4,
+  borderLeftColor: COLORS.lightGreen,
+},
+upcomingCardContainer: {
+  marginBottom: 16,
+},
+cardHeaderRight: {
+  flexDirection: 'row',
+  alignItems: 'center',
+},
   iconMarginRight: {
     marginRight: 8,
   },
@@ -1291,10 +1975,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     flex: 1,
-  },
-  cardHeaderRight: {
-    flexDirection: "row",
-    alignItems: "center",
   },
   contactLink: {
     textDecorationLine: "underline",

@@ -1,5 +1,4 @@
-// app/(tabs)/search.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Text,
   View,
@@ -8,25 +7,33 @@ import {
   SafeAreaView,
   TouchableOpacity,
   ActivityIndicator,
-  Animated,
   Linking,
+  Modal,
+  TextInput,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { Slider } from '@miblanchard/react-native-slider';
-import { collection, onSnapshot, doc, updateDoc, arrayUnion, arrayRemove, getDoc } from 'firebase/firestore';
-import { db } from '../../firebaseConfig';
+import { collection, onSnapshot, doc, updateDoc, arrayUnion, arrayRemove, addDoc, deleteDoc, getDoc } from 'firebase/firestore'; import { db } from '../../firebaseConfig';
 import * as Location from 'expo-location';
 import { useAuth } from '../../contexts/AuthContext';
+import { Picker } from '@react-native-picker/picker';
+import DropDownPicker from 'react-native-dropdown-picker';
+import { useNavigation } from '@react-navigation/native';
+
+
 
 const COLORS = {
-  background: '#fcfaf0',
-  darkGreen: '#4d7c0f',
-  lightGreen: '#709d43',
-  card: '#e0c9b0',
-  textDark: '#000000',
+  background: '#f5f3eb',      // Soft warm off-white
+  darkGreen: '#4d7c0f',       // Deep olive green
+  lightGreen: '#709d43',      // Medium sage green
+  card: '#e8dcc8',            // Warm beige for cards
+  textDark: '#2d4a0a',        // Darker green for better text contrast
   textLight: '#ffffff',
-  timeFilter: '#d1d1d1',
+  timeFilter: '#c9d1b8',      // Soft green-grey for slider
 };
 
 export type Opportunity = {
@@ -41,8 +48,13 @@ export type Opportunity = {
     latitude: number;
     longitude: number;
   };
-  distance?: number; // computed
+  distance?: number;
+  eventType?: 'ongoing' | 'upcoming';
+  eventDate?: string;
+  eventTime?: string;   // <-- ADD THIS LINE
+  postedBy?: string;
 };
+
 
 // Haversine distance in miles
 function haversineMiles(
@@ -53,21 +65,43 @@ function haversineMiles(
 ): number {
   const toRad = (x: number) => (x * Math.PI) / 180;
 
-  const R = 6371; // Earth radius in km
+  const R = 6371;
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos(toRad(lat1)) *
-      Math.cos(toRad(lat2)) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
+    Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) *
+    Math.sin(dLon / 2);
 
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   const distanceKm = R * c;
   const distanceMiles = distanceKm * 0.621371;
 
   return distanceMiles;
+}
+
+// Geocode address to coordinates using a free API
+async function geocodeAddress(address: string): Promise<{ latitude: number; longitude: number } | null> {
+  try {
+    const encodedAddress = encodeURIComponent(address);
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodedAddress}&limit=1`
+    );
+    const data = await response.json();
+
+    if (data && data.length > 0) {
+      return {
+        latitude: parseFloat(data[0].lat),
+        longitude: parseFloat(data[0].lon),
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error('Geocoding error:', error);
+    return null;
+  }
 }
 
 const Header = () => (
@@ -83,25 +117,10 @@ const Header = () => (
         <Text style={styles.subLogoText}>VOLUNTEER & COMMUNITY</Text>
       </View>
     </View>
-    
-    <View style={styles.headerButtons}>
-      {isOrganization && (
-        <TouchableOpacity 
-          style={styles.adminButton}
-          onPress={() => Alert.alert('Admin', 'Admin panel coming soon!')}
-        >
-          <MaterialIcons name="admin-panel-settings" size={24} color={COLORS.textLight} />
-          <Text style={styles.adminButtonText}>Admin</Text>
-        </TouchableOpacity>
-      )}
-      
-      <TouchableOpacity style={styles.menuButton}>
-        <MaterialIcons name="menu" size={30} color={COLORS.textLight} />
-      </TouchableOpacity>
-    </View>
   </View>
 );
 
+// Add to OpportunityCard parameters
 const OpportunityCard = ({
   id,
   title,
@@ -110,27 +129,47 @@ const OpportunityCard = ({
   email,
   phone,
   website,
+  eventDate,
+  eventTime,
+  postedBy,
   isFavorited,
   onToggleFavorite,
-}: Opportunity & { isFavorited: boolean; onToggleFavorite: (id: string) => void }) => {
+  canEdit,
+  onEdit,
+  onDelete,
+  isUpcoming,
+  isAttending,
+  onToggleAttendance,
+  attendeeCount,
+  isOrganization,
+}: Opportunity & {
+  isFavorited: boolean;
+  onToggleFavorite: (id: string) => void;
+  canEdit: boolean;
+  onEdit?: () => void;
+  onDelete?: () => void;
+  isUpcoming: boolean;
+  isAttending: boolean;
+  onToggleAttendance: (id: string) => void;
+  attendeeCount: number;
+  isOrganization: boolean;
+}) => {
   const [isExpanded, setIsExpanded] = useState(false);
-  const distanceText =
-    distance != null ? `${distance.toFixed(1)} mi` : 'Distance unavailable';
+
+  // Remove the distanceText variable since we're conditionally rendering
+  // const distanceText = ... (delete this line)
 
   const handleSignUp = async () => {
     if (website) {
       try {
-        // Ensure URL has a protocol
         let url = website;
         if (!url.startsWith('http://') && !url.startsWith('https://')) {
           url = 'https://' + url;
         }
-        
+
         const supported = await Linking.canOpenURL(url);
         if (supported) {
           await Linking.openURL(url);
-        } else {
-          console.error("Don't know how to open URI: " + url);
         }
       } catch (error) {
         console.error('Error opening website:', error);
@@ -140,7 +179,6 @@ const OpportunityCard = ({
 
   const handlePhoneCall = async (phoneNumber: string) => {
     try {
-      // Remove all non-numeric characters except +
       const cleanedNumber = phoneNumber.replace(/[^\d+]/g, '');
       const url = `tel:${cleanedNumber}`;
       const supported = await Linking.canOpenURL(url);
@@ -170,8 +208,8 @@ const OpportunityCard = ({
   };
 
   return (
-    <TouchableOpacity 
-      style={[styles.card, isExpanded && styles.cardExpanded]} 
+    <TouchableOpacity
+      style={[styles.card, isExpanded && styles.cardExpanded]}
       onPress={() => setIsExpanded(!isExpanded)}
       activeOpacity={0.7}
     >
@@ -186,14 +224,33 @@ const OpportunityCard = ({
           </View>
           <View style={styles.cardHeaderText}>
             <Text style={styles.cardTitle}>{title}</Text>
-            <View style={styles.distanceRow}>
-              <MaterialCommunityIcons
-                name="map-marker"
-                size={14}
-                color={COLORS.lightGreen}
-              />
-              <Text style={styles.distanceText}>{distanceText}</Text>
-            </View>
+
+            {/* Distance Section - Only show when distance is available */}
+            {distance != null && (
+              <View style={styles.distanceRow}>
+                <MaterialCommunityIcons
+                  name="map-marker"
+                  size={14}
+                  color={COLORS.lightGreen}
+                />
+                <Text style={styles.distanceText}>{distance.toFixed(1)} mi</Text>
+              </View>
+            )}
+
+            {/* Date Section */}
+            {eventDate && (
+              <View style={styles.dateRow}>
+                <MaterialCommunityIcons
+                  name="calendar"
+                  size={14}
+                  color={COLORS.lightGreen}
+                />
+                <Text style={styles.dateText}>
+                  {eventDate}
+                  {eventTime ? ` • ${eventTime}` : ''}
+                </Text>
+              </View>
+            )}
           </View>
         </View>
         <View style={styles.cardHeaderRight}>
@@ -215,7 +272,7 @@ const OpportunityCard = ({
       {isExpanded && (
         <View style={styles.expandedContent}>
           <View style={styles.divider} />
-          
+
           <Text style={styles.descriptionLabel}>About</Text>
           <Text style={styles.cardDescription}>{description}</Text>
 
@@ -223,7 +280,7 @@ const OpportunityCard = ({
             <View style={styles.contactSection}>
               <Text style={styles.contactLabel}>Contact</Text>
               {phone && (
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.contactRow}
                   onPress={() => handlePhoneCall(phone)}
                 >
@@ -236,7 +293,7 @@ const OpportunityCard = ({
                 </TouchableOpacity>
               )}
               {email && (
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.contactRow}
                   onPress={() => handleEmail(email)}
                 >
@@ -251,7 +308,26 @@ const OpportunityCard = ({
             </View>
           )}
 
-          <TouchableOpacity 
+          {canEdit && (
+            <View style={styles.editDeleteRow}>
+              <TouchableOpacity
+                style={styles.editButton}
+                onPress={onEdit}
+              >
+                <MaterialCommunityIcons name="pencil" size={18} color={COLORS.textLight} />
+                <Text style={styles.editButtonText}>Edit</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.deleteButton}
+                onPress={onDelete}
+              >
+                <MaterialCommunityIcons name="delete" size={18} color={COLORS.textLight} />
+                <Text style={styles.deleteButtonText}>Delete</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          <TouchableOpacity
             style={styles.signUpButton}
             onPress={handleSignUp}
             disabled={!website}
@@ -267,6 +343,37 @@ const OpportunityCard = ({
               />
             )}
           </TouchableOpacity>
+          {isUpcoming && !isOrganization && (
+            <TouchableOpacity
+              style={[
+                styles.attendanceButton,
+                isAttending && styles.attendanceButtonConfirmed
+              ]}
+              onPress={() => onToggleAttendance(id)}
+            >
+              <MaterialCommunityIcons
+                name={isAttending ? "check-circle" : "calendar-check"}
+                size={18}
+                color={COLORS.textLight}
+              />
+              <Text style={styles.attendanceButtonText}>
+                {isAttending ? 'Attendance Confirmed' : 'Confirm Attendance'}
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {isUpcoming && isOrganization && canEdit && (
+            <View style={styles.attendeeCountSection}>
+              <MaterialCommunityIcons
+                name="account-group"
+                size={20}
+                color={COLORS.lightGreen}
+              />
+              <Text style={styles.attendeeCountText}>
+                {attendeeCount} {attendeeCount === 1 ? 'person' : 'people'} attending
+              </Text>
+            </View>
+          )}
         </View>
       )}
     </TouchableOpacity>
@@ -275,12 +382,122 @@ const OpportunityCard = ({
 
 export default function SearchScreen() {
   const { user } = useAuth();
-  const [distanceValue, setDistanceValue] = React.useState([5]); // miles
+  const navigation = useNavigation();
+  const scrollViewRef = useRef<ScrollView>(null);
+  const [activeTab, setActiveTab] = useState<'ongoing' | 'upcoming'>('ongoing');
+  const [distanceValue, setDistanceValue] = useState([5]);
   const maxDistance = distanceValue[0];
 
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [loading, setLoading] = useState(true);
   const [favorites, setFavorites] = useState<string[]>([]);
+  const [isOrganization, setIsOrganization] = useState(false);
+
+  // Date picker state
+  // Dropdown open states
+  const [openMonth, setOpenMonth] = useState(false);
+  const [openDay, setOpenDay] = useState(false);
+  const [openYear, setOpenYear] = useState(false);
+  const [openHour, setOpenHour] = useState(false);
+  const [openMinute, setOpenMinute] = useState(false);
+  const [openAmPm, setOpenAmPm] = useState(false);
+
+  // Dropdown selected values
+  const [eventMonth, setEventMonth] = useState(null);
+  const [eventDay, setEventDay] = useState(null);
+  const [eventYear, setEventYear] = useState(null);
+  const [eventHour, setEventHour] = useState(null);
+  const [eventMinute, setEventMinute] = useState(null);
+  const [eventAmPm, setEventAmPm] = useState(null);
+
+  // Dropdown item lists
+  const monthItems = [
+    { label: 'January', value: 'January' },
+    { label: 'February', value: 'February' },
+    { label: 'March', value: 'March' },
+    { label: 'April', value: 'April' },
+    { label: 'May', value: 'May' },
+    { label: 'June', value: 'June' },
+    { label: 'July', value: 'July' },
+    { label: 'August', value: 'August' },
+    { label: 'September', value: 'September' },
+    { label: 'October', value: 'October' },
+    { label: 'November', value: 'November' },
+    { label: 'December', value: 'December' },
+  ];
+
+  const dayItems = [...Array(31)].map((_, i) => ({
+    label: `${i + 1}`,
+    value: `${i + 1}`,
+  }));
+
+  const yearItems = [
+    { label: '2025', value: '2025' },
+    { label: '2026', value: '2026' },
+    { label: '2027', value: '2027' },
+  ];
+
+  const hourItems = [...Array(12)].map((_, i) => ({
+    label: `${i + 1}`,
+    value: `${i + 1}`,
+  }));
+
+  const minuteItems = [
+    { label: '00', value: '00' },
+    { label: '15', value: '15' },
+    { label: '30', value: '30' },
+    { label: '45', value: '45' },
+  ];
+
+  // Add this with your other state declarations
+  const [attendees, setAttendees] = useState<{ [key: string]: string[] }>({});
+
+  // Add this useEffect to listen for attendee changes
+  useEffect(() => {
+    const colRef = collection(db, 'VolunteerOpportunity');
+
+    const unsubscribe = onSnapshot(colRef, (snapshot) => {
+      const attendeeData: { [key: string]: string[] } = {};
+      snapshot.docs.forEach((doc) => {
+        const data = doc.data();
+        if (data.attendees) {
+          attendeeData[doc.id] = data.attendees;
+        }
+      });
+      setAttendees(attendeeData);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Add this function before the return statement
+  const toggleAttendance = async (opportunityId: string) => {
+    if (!user) return;
+
+    try {
+      const oppDocRef = doc(db, 'VolunteerOpportunity', opportunityId);
+      const oppDoc = await getDoc(oppDocRef);
+
+      if (!oppDoc.exists()) return;
+
+      const currentAttendees = oppDoc.data().attendees || [];
+
+      if (currentAttendees.includes(user.uid)) {
+        await updateDoc(oppDocRef, {
+          attendees: arrayRemove(user.uid)
+        });
+      } else {
+        await updateDoc(oppDocRef, {
+          attendees: arrayUnion(user.uid)
+        });
+      }
+    } catch (error) {
+      console.error('Error toggling attendance:', error);
+      Alert.alert('Error', 'Failed to update attendance. Please try again.');
+    }
+  };
+
+
 
   const [userLocation, setUserLocation] = useState<{
     latitude: number;
@@ -288,12 +505,50 @@ export default function SearchScreen() {
   } | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
 
+  // Post modal state
+  const [showPostModal, setShowPostModal] = useState(false);
+  const [postEventType, setPostEventType] = useState<'ongoing' | 'upcoming'>('ongoing');
+  const [formData, setFormData] = useState({
+    title: '',
+    description: '',
+    email: '',
+    phone: '',
+    website: '',
+    address: '',
+    eventDate: '',  // optional
+    eventTime: '',  // optional
+  });
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Check if user is an organization
+  useEffect(() => {
+    if (!user) return;
+
+    const checkAccountType = async () => {
+      try {
+        const userDocRef = doc(db, 'UserInformation', user.uid);
+        const userDoc = await getDoc(userDocRef);
+
+        if (userDoc.exists()) {
+          const data = userDoc.data();
+          setIsOrganization(data.accountType === 'organization');
+        }
+      } catch (error) {
+        console.error('Error checking account type:', error);
+      }
+    };
+
+    checkAccountType();
+  }, [user]);
+
   // Get user's favorites from Firestore
   useEffect(() => {
     if (!user) return;
 
     const userDocRef = doc(db, 'UserInformation', user.uid);
-    
+
     const unsubscribe = onSnapshot(
       userDocRef,
       (docSnap) => {
@@ -316,14 +571,12 @@ export default function SearchScreen() {
 
     try {
       const userDocRef = doc(db, 'UserInformation', user.uid);
-      
+
       if (favorites.includes(opportunityId)) {
-        // Remove from favorites
         await updateDoc(userDocRef, {
           favorites: arrayRemove(opportunityId)
         });
       } else {
-        // Add to favorites
         await updateDoc(userDocRef, {
           favorites: arrayUnion(opportunityId)
         });
@@ -345,12 +598,12 @@ export default function SearchScreen() {
 
           const location =
             raw.Location &&
-            typeof raw.Location.latitude === 'number' &&
-            typeof raw.Location.longitude === 'number'
+              typeof raw.Location.latitude === 'number' &&
+              typeof raw.Location.longitude === 'number'
               ? {
-                  latitude: raw.Location.latitude,
-                  longitude: raw.Location.longitude,
-                }
+                latitude: raw.Location.latitude,
+                longitude: raw.Location.longitude,
+              }
               : undefined;
 
           return {
@@ -362,7 +615,12 @@ export default function SearchScreen() {
             fax: raw.Fax ?? '',
             website: raw.Website ?? '',
             location,
+            eventType: raw.eventType ?? 'ongoing',
+            eventDate: raw.eventDate ?? '',
+            eventTime: raw.eventTime ?? '',   // <-- ADD THIS
+            postedBy: raw.postedBy ?? '',
           };
+
         });
 
         setOpportunities(data);
@@ -377,13 +635,12 @@ export default function SearchScreen() {
     return () => unsubscribe();
   }, []);
 
-  // Get user location (with fallback)
+  // Get user location
   useEffect(() => {
     (async () => {
       try {
         const servicesEnabled = await Location.hasServicesEnabledAsync();
         if (!servicesEnabled) {
-          console.warn('Location services disabled, using default location.');
           setLocationError('Location services disabled. Using default location.');
           setUserLocation({
             latitude: 30.4515,
@@ -401,7 +658,6 @@ export default function SearchScreen() {
         }
 
         if (finalStatus !== 'granted') {
-          console.warn('Location permission not granted, using default location.');
           setLocationError('Location permission not granted. Using default location.');
           setUserLocation({
             latitude: 30.4515,
@@ -421,7 +677,6 @@ export default function SearchScreen() {
           });
           setLocationError(null);
         } catch (err) {
-          console.warn('Current location unavailable, using default location.', err);
           setLocationError('Current location unavailable. Using default location.');
           setUserLocation({
             latitude: 30.4515,
@@ -452,37 +707,241 @@ export default function SearchScreen() {
     return opp;
   });
 
-  const filteredOpportunities = opportunitiesWithDistance.filter((opp) => {
-    if (opp.distance == null) return true;
-    return opp.distance <= maxDistance;
+  const filteredOpportunities = opportunitiesWithDistance
+    .filter((opp) => opp.eventType === activeTab)
+    .filter((opp) => {
+      if (opp.distance == null) return true;
+      return opp.distance <= maxDistance;
+    });
+
+  const openPostModal = () => {
+    setPostEventType('ongoing'); // or remove this completely later
+    setEditingId(null);
+    setFormData({
+      title: '',
+      description: '',
+      email: '',
+      phone: '',
+      website: '',
+      address: '',
+      eventDate: '',  // optional
+      eventTime: '',  // optional
+    });
+    setShowPostModal(true);
+  };
+
+  const openEditModal = (opp: Opportunity) => {
+    setEditingId(opp.id);
+
+    // remove the postEventType logic completely
+    // setPostEventType(opp.eventType || 'ongoing');  <-- DELETE THIS LINE
+
+    setFormData({
+      title: opp.title,
+      description: opp.description,
+      email: opp.email || '',
+      phone: opp.phone || '',
+      website: opp.website || '',
+      address: '', // backend stores coords only
+      eventDate: opp.eventDate || '',
+      eventTime: opp.eventTime || '', // <-- ADD THIS
+    });
+
+    setShowPostModal(true);
+  };
+
+
+  const handleSubmitPost = async () => {
+  if (!user || !formData.title || !formData.description) {
+    Alert.alert('Error', 'Please fill in at least the title and description');
+    return;
+  }
+
+  // Determine event type automatically
+  const eventType = eventMonth && eventDay && eventYear ? 'upcoming' : 'ongoing';
+
+  // ADD THIS VALIDATION BLOCK:
+  if (eventMonth && eventDay && eventYear) {
+    // Parse the selected date
+    const monthIndex = monthItems.findIndex(m => m.value === eventMonth);
+    const selectedDate = new Date(
+      parseInt(eventYear),
+      monthIndex,
+      parseInt(eventDay)
+    );
+
+    // If time is specified, set it on the date
+    if (eventHour && eventMinute && eventAmPm) {
+      let hour = parseInt(eventHour);
+      if (eventAmPm === 'PM' && hour !== 12) {
+        hour += 12;
+      } else if (eventAmPm === 'AM' && hour === 12) {
+        hour = 0;
+      }
+      selectedDate.setHours(hour, parseInt(eventMinute), 0, 0);
+    } else {
+      // If no time specified, set to end of day to be lenient
+      selectedDate.setHours(23, 59, 59, 999);
+    }
+
+    // Check if the selected date/time has passed
+    const now = new Date();
+    if (selectedDate < now) {
+      Alert.alert(
+        'Invalid Date/Time',
+        'The event date and time you selected has already passed. Please choose a future date and time.'
+      );
+      return;
+    }
+  }
+  // END VALIDATION BLOCK
+
+  setSubmitting(true);
+
+  try {
+    let coordinates = null;
+
+      if (formData.address) {
+        coordinates = await geocodeAddress(formData.address);
+        if (!coordinates) {
+          Alert.alert('Error', 'Could not find location for the provided address. Please try a different address.');
+          setSubmitting(false);
+          return;
+        }
+      }
+
+      const eventDate =
+        eventMonth && eventDay && eventYear
+          ? `${eventMonth} ${eventDay}, ${eventYear}`
+          : '';
+
+      const eventTime =
+        eventHour && eventMinute && eventAmPm
+          ? `${eventHour}:${eventMinute} ${eventAmPm}`
+          : '';
+
+
+      // Now create Firestore object
+      const opportunityData = {
+        Business: formData.title,
+        Description: formData.description,
+        Email: formData.email,
+        Phone: formData.phone,
+        Website: formData.website,
+        Location: coordinates
+          ? {
+            latitude: coordinates.latitude,
+            longitude: coordinates.longitude,
+          }
+          : null,
+        eventType,
+        eventDate,
+        eventTime,
+        postedBy: user.uid,
+      };
+
+
+      if (editingId) {
+        // Update existing
+        const docRef = doc(db, 'VolunteerOpportunity', editingId);
+        await updateDoc(docRef, opportunityData);
+        Alert.alert('Success', 'Opportunity updated successfully!');
+      } else {
+        // Create new
+        await addDoc(collection(db, 'VolunteerOpportunity'), opportunityData);
+        Alert.alert('Success', 'Opportunity posted successfully!');
+      }
+
+      setShowPostModal(false);
+      setFormData({
+        title: '',
+        description: '',
+        email: '',
+        phone: '',
+        website: '',
+        address: '',
+        eventDate: '',  // optional
+        eventTime: '',  // optional
+      });
+    } catch (error) {
+      console.error('Error posting opportunity:', error);
+      Alert.alert('Error', 'Failed to post opportunity. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  useEffect(() => {
+  const unsubscribe = navigation.addListener('focus', () => {
+    scrollViewRef.current?.scrollTo({ y: 0, animated: false });
   });
+
+  return unsubscribe;
+}, [navigation]);
+
+  const handleDeleteOpportunity = async (id: string) => {
+    Alert.alert(
+      'Delete Opportunity',
+      'Are you sure you want to delete this opportunity?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteDoc(doc(db, 'VolunteerOpportunity', id));
+              Alert.alert('Success', 'Opportunity deleted successfully');
+            } catch (error) {
+              console.error('Error deleting opportunity:', error);
+              Alert.alert('Error', 'Failed to delete opportunity');
+            }
+          },
+        },
+      ]
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.contentContainer}>
+      <ScrollView ref={scrollViewRef} contentContainerStyle={styles.contentContainer}>
         <Header />
+
+        {isOrganization && (
+          <View style={styles.postButtonContainer}>
+            <TouchableOpacity
+              style={styles.postButton}
+              onPress={() => openPostModal()}
+            >
+              <MaterialCommunityIcons name="plus-circle" size={24} color={COLORS.textLight} />
+              <Text style={styles.postButtonText}>Post Opportunity</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         <Text style={styles.screenTitle}>Volunteer Near You</Text>
 
-        <View style={styles.sliderContainer}>
-          <Slider
-            value={distanceValue}
-            onValueChange={(value) => setDistanceValue(value as number[])}
-            minimumValue={1}
-            maximumValue={50}
-            step={0.5}
-            thumbTintColor={COLORS.darkGreen}
-            minimumTrackTintColor={COLORS.darkGreen}
-            maximumTrackTintColor={COLORS.timeFilter}
-            containerStyle={styles.sliderBar}
-          />
-          <View style={styles.sliderLabelRow}>
-            <Text style={styles.sliderLabelText}>Within</Text>
-            <Text style={styles.sliderLabelText}>
-              {maxDistance.toFixed(1)} mi
+        {/* Tabs */}
+        <View style={styles.tabContainer}>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'ongoing' && styles.activeTab]}
+            onPress={() => setActiveTab('ongoing')}
+          >
+            <Text style={[styles.tabText, activeTab === 'ongoing' && styles.activeTabText]}>
+              Ongoing
             </Text>
-          </View>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'upcoming' && styles.activeTab]}
+            onPress={() => setActiveTab('upcoming')}
+          >
+            <Text style={[styles.tabText, activeTab === 'upcoming' && styles.activeTabText]}>
+              Upcoming
+            </Text>
+          </TouchableOpacity>
         </View>
+
+
 
         {loading && (
           <View style={{ marginTop: 20, alignItems: 'center' }}>
@@ -493,27 +952,260 @@ export default function SearchScreen() {
 
         {!loading && locationError && (
           <Text style={{ color: 'red', marginBottom: 10 }}>
-            {locationError} — showing opportunities without distance filtering.
+            {locationError}
           </Text>
         )}
 
         {!loading && (
           filteredOpportunities.length > 0 ? (
             filteredOpportunities.map((opportunity) => (
-              <OpportunityCard 
-                key={opportunity.id} 
+              <OpportunityCard
+                key={opportunity.id}
                 {...opportunity}
                 isFavorited={favorites.includes(opportunity.id)}
                 onToggleFavorite={toggleFavorite}
+                canEdit={user?.uid === opportunity.postedBy}
+                onEdit={() => openEditModal(opportunity)}
+                onDelete={() => handleDeleteOpportunity(opportunity.id)}
+                isUpcoming={opportunity.eventType === 'upcoming'}
+                isAttending={(attendees[opportunity.id] || []).includes(user?.uid || '')}
+                onToggleAttendance={toggleAttendance}
+                attendeeCount={(attendees[opportunity.id] || []).length}
+                isOrganization={isOrganization}
               />
             ))
           ) : (
             <Text style={styles.noResultsText}>
-              No opportunities found within {maxDistance.toFixed(1)} miles.
+              No {activeTab} opportunities found within {maxDistance.toFixed(1)} miles.
             </Text>
           )
         )}
       </ScrollView>
+
+      {/* Post Opportunity Modal */}
+      <Modal
+        visible={showPostModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowPostModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={{ flex: 1 }}
+          >
+            <View style={styles.modalContent}>
+              {/* Use ScrollView but disable scrolling when dropdowns are open */}
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                scrollEnabled={!openMonth && !openDay && !openYear && !openHour && !openMinute && !openAmPm}
+                contentContainerStyle={styles.modalScrollContent}
+              >
+                <Text style={styles.modalTitle}>
+                  {editingId ? 'Edit' : 'Post'} {formData.eventDate ? 'Upcoming' : 'Ongoing'} Opportunity
+                </Text>
+
+                <TextInput
+                  style={styles.input}
+                  placeholder="Organization/Event Name *"
+                  placeholderTextColor="#777"
+                  value={formData.title}
+                  onChangeText={(text) => setFormData({ ...formData, title: text })}
+                />
+
+                <TextInput
+                  style={[styles.input, styles.textArea]}
+                  placeholder="Description *"
+                  placeholderTextColor="#777"
+                  value={formData.description}
+                  onChangeText={(text) => setFormData({ ...formData, description: text })}
+                  multiline
+                  numberOfLines={4}
+                />
+
+                <TextInput
+                  style={styles.input}
+                  placeholder="Email"
+                  placeholderTextColor="#777"
+                  value={formData.email}
+                  onChangeText={(text) => setFormData({ ...formData, email: text })}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+
+                <TextInput
+                  style={styles.input}
+                  placeholder="Phone"
+                  placeholderTextColor="#777"
+                  value={formData.phone}
+                  onChangeText={(text) => setFormData({ ...formData, phone: text })}
+                  keyboardType="phone-pad"
+                />
+
+                <TextInput
+                  style={styles.input}
+                  placeholder="Website"
+                  placeholderTextColor="#777"
+                  value={formData.website}
+                  onChangeText={(text) => setFormData({ ...formData, website: text })}
+                  autoCapitalize="none"
+                />
+
+                <TextInput
+                  style={styles.input}
+                  placeholder="Address (e.g., 123 Main St, Baton Rouge, LA)"
+                  placeholderTextColor="#777"
+                  value={formData.address}
+                  onChangeText={(text) => setFormData({ ...formData, address: text })}
+                />
+
+                {/* Event Date */}
+                <Text style={{ fontWeight: '700', marginBottom: 6 }}>Event Date (optional)</Text>
+
+                                {/* MONTH - Lowest zIndex since it's at the top visually */}
+                <View style={{ zIndex: 2000, marginBottom: 10 }}>
+                  <DropDownPicker
+                    open={openMonth}
+                    value={eventMonth}
+                    items={monthItems}
+                    setOpen={setOpenMonth}
+                    setValue={setEventMonth}
+                    placeholder="Month"
+                    listMode="SCROLLVIEW"
+                    scrollViewProps={{
+                      nestedScrollEnabled: true,
+                    }}
+                    dropDownDirection="TOP" // Force it to open downward
+                  />
+                </View>
+
+                {/* DAY - Medium zIndex */}
+                <View style={{ zIndex: 3000, marginBottom: 10 }}>
+                  <DropDownPicker
+                    open={openDay}
+                    value={eventDay}
+                    items={dayItems}
+                    setOpen={setOpenDay}
+                    setValue={setEventDay}
+                    placeholder="Day"
+                    listMode="SCROLLVIEW"
+                    scrollViewProps={{
+                      nestedScrollEnabled: true,
+                    }}
+                    dropDownDirection="TOP" // Force it to open downward
+                  />
+                </View>
+{/* YEAR - Highest zIndex since it's at the bottom visually */}
+                <View style={{ zIndex: 4000, marginBottom: 10 }}>
+                  <DropDownPicker
+                    open={openYear}
+                    value={eventYear}
+                    items={yearItems}
+                    setOpen={setOpenYear}
+                    setValue={setEventYear}
+                    placeholder="Year"
+                    listMode="SCROLLVIEW"
+                    scrollViewProps={{
+                      nestedScrollEnabled: true,
+                    }}
+                    dropDownDirection="TOP" // Force it to open downward
+                  />
+                </View>
+
+
+{/* EVENT TIME – only show if date selected */}
+{eventMonth && eventDay && eventYear && (
+  <>
+    <Text style={{ fontWeight: '700', marginTop: 12, marginBottom: 6 }}>Event Time (optional)</Text>
+
+    {/* HOUR - First dropdown, HIGHEST zIndex since it's first */}
+    <View style={{ zIndex: 5000, marginBottom: 10 }}>
+      <DropDownPicker
+        open={openHour}
+        value={eventHour}
+        items={hourItems}
+        setOpen={setOpenHour}
+        setValue={setEventHour}
+        placeholder="Hour"
+        listMode="SCROLLVIEW"
+        scrollViewProps={{
+          nestedScrollEnabled: true,
+        }}
+        dropDownDirection="TOP"
+        maxHeight={150}
+      />
+    </View>
+
+    {/* MINUTE - Second dropdown, MEDIUM zIndex */}
+    <View style={{ zIndex: 6000, marginBottom: 10 }}>
+      <DropDownPicker
+        open={openMinute}
+        value={eventMinute}
+        items={minuteItems}
+        setOpen={setOpenMinute}
+        setValue={setEventMinute}
+        placeholder="Minute"
+        listMode="SCROLLVIEW"
+        scrollViewProps={{
+          nestedScrollEnabled: true,
+        }}
+        dropDownDirection="TOP"
+        maxHeight={150}
+      />
+    </View>
+
+    {/* AM/PM - Third dropdown, LOWEST zIndex */}
+    <View style={{ zIndex: 7000, marginBottom: 10 }}>
+      <DropDownPicker
+        open={openAmPm}
+        value={eventAmPm}
+        items={[
+          { label: 'AM', value: 'AM' },
+          { label: 'PM', value: 'PM' },
+        ]}
+        setOpen={setOpenAmPm}
+        setValue={setEventAmPm}
+        placeholder="AM / PM"
+        listMode="SCROLLVIEW"
+        scrollViewProps={{
+          nestedScrollEnabled: true,
+        }}
+        dropDownDirection="TOP"
+        maxHeight={150}
+      />
+    </View>
+  </>
+)}
+
+                <View style={styles.modalButtons}>
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.cancelButton]}
+                    onPress={() => setShowPostModal(false)}
+                    disabled={submitting}
+                  >
+                    <Text style={styles.cancelButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.submitButton]}
+                    onPress={handleSubmitPost}
+                    disabled={submitting}
+                  >
+                    {submitting ? (
+                      <ActivityIndicator color={COLORS.textLight} />
+                    ) : (
+                      <Text style={styles.submitButtonText}>
+                        {editingId ? 'Update' : 'Post'}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -529,12 +1221,18 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
   },
 
+  /* ---------- HEADER ---------- */
+
+  // In search.tsx, replace the header styles with this:
+
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: 10,
     marginBottom: 10,
+    backgroundColor: 'transparent',
+    position: 'fixed',
   },
   logoContainer: {
     flexDirection: 'row',
@@ -551,75 +1249,113 @@ const styles = StyleSheet.create({
     color: COLORS.darkGreen,
     fontWeight: '500',
   },
-  headerButtons: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  adminButton: {
-    backgroundColor: COLORS.admin,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  adminButtonText: {
-    color: COLORS.textLight,
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
   menuButton: {
     backgroundColor: COLORS.lightGreen,
     borderRadius: 8,
     padding: 5,
   },
 
+  /* ---------- POST BUTTON ---------- */
+
+  postButtonContainer: {
+    marginBottom: 15,
+  },
+  postButton: {
+    backgroundColor: COLORS.darkGreen,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 14,
+    borderRadius: 12,
+    gap: 8,
+  },
+  postButtonText: {
+    color: COLORS.textLight,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+
+  /* ---------- TITLES ---------- */
+
   screenTitle: {
     fontSize: 22,
     fontWeight: 'bold',
     color: COLORS.textDark,
+    marginBottom: 15,
+  },
+
+  /* ---------- TABS ---------- */
+
+  tabContainer: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.timeFilter,
     marginBottom: 20,
   },
+  tab: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  activeTab: {
+    borderBottomWidth: 2,
+    borderBottomColor: COLORS.darkGreen,
+  },
+  tabText: {
+    fontSize: 16,
+    color: COLORS.textDark,
+    fontWeight: '500',
+  },
+  activeTabText: {
+    color: COLORS.darkGreen,
+    fontWeight: '700',
+  },
+
+  /* ---------- DISTANCE SLIDER ---------- */
 
   sliderContainer: {
     marginBottom: 20,
-    paddingHorizontal: 5,
   },
   sliderBar: {
-    height: 30,
+    width: '100%',
   },
   sliderLabelRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: -10,
+    marginTop: 6,
   },
   sliderLabelText: {
     fontSize: 14,
+    fontWeight: '500',
     color: COLORS.textDark,
   },
 
+  /* ---------- NO RESULTS ---------- */
+
+  noResultsText: {
+    marginTop: 20,
+    textAlign: 'center',
+    fontSize: 16,
+    color: COLORS.textDark,
+  },
+
+  /* ---------- CARDS ---------- */
+
   card: {
     backgroundColor: COLORS.card,
-    borderRadius: 12,
-    padding: 18,
-    marginBottom: 20,
-    shadowColor: '#000',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 16,
+    elevation: 3, // Android
+    shadowColor: '#000', // iOS
+    shadowOpacity: 0.15,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
     shadowRadius: 4,
-    elevation: 3,
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.lightGreen,
-    overflow: 'hidden',
   },
   cardExpanded: {
-    backgroundColor: '#e8d5ba',
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 5,
+    backgroundColor: '#d8c2a6',
   },
+
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -628,104 +1364,299 @@ const styles = StyleSheet.create({
   cardHeaderLeft: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
     flex: 1,
-  },
-  cardHeaderRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  favoriteButton: {
-    padding: 4,
   },
   iconCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#f5f0e8',
+    backgroundColor: COLORS.textLight,
+    padding: 8,
+    borderRadius: 30,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
   },
   cardHeaderText: {
-    flex: 1,
+    flexShrink: 1,
   },
   cardTitle: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '700',
     color: COLORS.textDark,
     marginBottom: 4,
   },
+
   distanceRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    marginBottom: 2,
   },
   distanceText: {
-    fontSize: 13,
-    color: COLORS.lightGreen,
-    fontWeight: '600',
+    fontSize: 12,
+    color: COLORS.darkGreen,
   },
+
+  dateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  dateText: {
+    fontSize: 12,
+    color: COLORS.darkGreen,
+  },
+
+  cardHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  favoriteButton: {
+    padding: 6,
+  },
+
+  /* ---------- EXPANDED CARD CONTENT ---------- */
+
   expandedContent: {
-    marginTop: 16,
+    marginTop: 12,
   },
   divider: {
     height: 1,
-    backgroundColor: '#d4c4b0',
-    marginBottom: 16,
+    backgroundColor: COLORS.lightGreen,
+    marginVertical: 10,
+    opacity: 0.4,
   },
+
   descriptionLabel: {
     fontSize: 14,
     fontWeight: '700',
-    color: COLORS.darkGreen,
-    marginBottom: 8,
+    color: COLORS.textDark,
+    marginBottom: 5,
   },
   cardDescription: {
     fontSize: 14,
+    color: COLORS.textDark,
     lineHeight: 20,
-    color: '#4a4a4a',
-    marginBottom: 16,
+    marginBottom: 12,
   },
+
+  /* ---------- CONTACT SECTION ---------- */
+
   contactSection: {
-    marginBottom: 16,
+    marginBottom: 15,
   },
   contactLabel: {
     fontSize: 14,
     fontWeight: '700',
-    color: COLORS.darkGreen,
-    marginBottom: 8,
+    marginBottom: 6,
+    color: COLORS.textDark,
   },
   contactRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   contactText: {
     fontSize: 13,
-    color: '#4a4a4a',
+    color: COLORS.textDark,
   },
   contactLink: {
     textDecorationLine: 'underline',
   },
+
+  /* ---------- EDIT / DELETE ---------- */
+
+  editDeleteRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 15,
+  },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.lightGreen,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 6,
+  },
+  editButtonText: {
+    color: COLORS.textLight,
+    fontWeight: '700',
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#b83f3f',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 6,
+  },
+  deleteButtonText: {
+    color: COLORS.textLight,
+    fontWeight: '700',
+  },
+
+  /* ---------- SIGN UP BUTTON ---------- */
+
   signUpButton: {
-    backgroundColor: COLORS.darkGreen,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderRadius: 12,
+    marginTop: 10,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: COLORS.darkGreen,
+    paddingVertical: 10,
+    borderRadius: 10,
     gap: 8,
   },
   signUpButtonText: {
     color: COLORS.textLight,
-    fontWeight: '700',
-    fontSize: 15,
-  },
-  noResultsText: {
-    textAlign: 'center',
-    marginTop: 30,
     fontSize: 16,
+    fontWeight: '700',
+  },
+
+  /* ---------- MODAL ---------- */
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalKeyboardAvoid: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  // REPLACE the modalContent style:
+modalContent: {
+  backgroundColor: COLORS.background,
+  marginHorizontal: 20,
+  borderRadius: 14,
+  maxHeight: '85%',  // Changed from 90%
+  minHeight: '60%',
+  marginTop: 'auto',  // Changed from 30
+  marginBottom: 'auto',  // Added
+  paddingTop: 20
+},
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 60,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.timeFilter,
+  },
+  closeButton: {
+    padding: 5,
+  },
+  modalScrollView: {
+    flex: 1,
+  },
+  modalScrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+  },
+  sectionLabel: {
+    fontWeight: '700',
+    marginBottom: 6,
+    color: COLORS.textDark,
+    fontSize: 14,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: COLORS.darkGreen,
+    marginBottom: 15,
+  },
+
+  input: {
+    backgroundColor: '#fff',
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#cfcfcf',
+    marginBottom: 12,
+    fontSize: 14,
+    color: '#000',
+  },
+  textArea: {
+    height: 110,
+    textAlignVertical: 'top',
+  },
+
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 10,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#ccc',
+    marginRight: 10,
+  },
+  submitButton: {
+    backgroundColor: COLORS.darkGreen,
+    marginLeft: 10,
+  },
+  cancelButtonText: {
+    color: COLORS.textDark,
+    fontWeight: '700',
+  },
+  submitButtonText: {
+    color: COLORS.textLight,
+    fontWeight: '700',
+  },
+  timeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+    marginLeft: 18, // Indent to align with date
+  },
+  timeText: {
+    fontSize: 12,
+    color: COLORS.darkGreen,
+  },
+  attendanceButton: {
+    marginTop: 10,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.lightGreen,
+    paddingVertical: 10,
+    borderRadius: 10,
+    gap: 8,
+  },
+  attendanceButtonConfirmed: {
+    backgroundColor: COLORS.darkGreen,
+  },
+  attendanceButtonText: {
+    color: COLORS.textLight,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  attendeeCountSection: {
+    marginTop: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    padding: 12,
+    backgroundColor: '#f5f0e8',
+    borderRadius: 10,
+  },
+  attendeeCountText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textDark,
   },
 });
