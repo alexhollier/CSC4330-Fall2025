@@ -1,14 +1,18 @@
 // contexts/AuthContext.tsx
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+
 import { auth, db } from '../firebaseConfig';
+import { migrateLocalToUser } from '../app/services/filterService';
+import { doc, getDoc } from 'firebase/firestore';
+
 
 interface UserData {
   uid: string;
   email: string | null;
   accountType: 'user' | 'organization';
 }
+
 
 interface AuthContextType {
   user: User | null;
