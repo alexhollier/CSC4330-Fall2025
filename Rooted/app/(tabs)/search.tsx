@@ -53,6 +53,7 @@ export type Opportunity = {
   eventDate?: string;
   eventTime?: string;   // <-- ADD THIS LINE
   postedBy?: string;
+  organizationName?: string;
 };
 
 
@@ -132,6 +133,7 @@ const OpportunityCard = ({
   eventDate,
   eventTime,
   postedBy,
+  organizationName,
   isFavorited,
   onToggleFavorite,
   canEdit,
@@ -142,6 +144,7 @@ const OpportunityCard = ({
   onToggleAttendance,
   attendeeCount,
   isOrganization,
+  onViewAttendees,
 }: Opportunity & {
   isFavorited: boolean;
   onToggleFavorite: (id: string) => void;
@@ -153,11 +156,9 @@ const OpportunityCard = ({
   onToggleAttendance: (id: string) => void;
   attendeeCount: number;
   isOrganization: boolean;
+  onViewAttendees: (id: string) => void;
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
-
-  // Remove the distanceText variable since we're conditionally rendering
-  // const distanceText = ... (delete this line)
 
   const handleSignUp = async () => {
     if (website) {
@@ -207,6 +208,7 @@ const OpportunityCard = ({
     onToggleFavorite(id);
   };
 
+
   return (
     <TouchableOpacity
       style={[styles.card, isExpanded && styles.cardExpanded]}
@@ -224,6 +226,20 @@ const OpportunityCard = ({
           </View>
           <View style={styles.cardHeaderText}>
             <Text style={styles.cardTitle}>{title}</Text>
+
+            {/* Organization Name - NEW */}
+            {organizationName && (
+              <View style={styles.organizationRow}>
+                <MaterialCommunityIcons
+                  name="domain"
+                  size={14}
+                  color={COLORS.lightGreen}
+                />
+                <Text style={styles.organizationText}>
+                  {organizationName}
+                </Text>
+              </View>
+            )}
 
             {/* Distance Section - Only show when distance is available */}
             {distance != null && (
@@ -254,19 +270,21 @@ const OpportunityCard = ({
           </View>
         </View>
         <View style={styles.cardHeaderRight}>
-          <TouchableOpacity onPress={handleFavorite} style={styles.favoriteButton}>
-            <MaterialCommunityIcons
-              name={isFavorited ? "heart" : "heart-outline"}
-              size={22}
-              color={COLORS.lightGreen}
-            />
-          </TouchableOpacity>
-          <MaterialCommunityIcons
-            name={isExpanded ? "chevron-up" : "chevron-down"}
-            size={24}
-            color={COLORS.darkGreen}
-          />
-        </View>
+  {!isOrganization && (
+    <TouchableOpacity onPress={handleFavorite} style={styles.favoriteButton}>
+      <MaterialCommunityIcons
+        name={isFavorited ? "heart" : "heart-outline"}
+        size={22}
+        color={COLORS.lightGreen}
+      />
+    </TouchableOpacity>
+  )}
+  <MaterialCommunityIcons
+    name={isExpanded ? "chevron-up" : "chevron-down"}
+    size={24}
+    color={COLORS.darkGreen}
+  />
+</View>
       </View>
 
       {isExpanded && (
@@ -327,22 +345,24 @@ const OpportunityCard = ({
             </View>
           )}
 
-          <TouchableOpacity
-            style={styles.signUpButton}
-            onPress={handleSignUp}
-            disabled={!website}
-          >
-            <Text style={styles.signUpButtonText}>
-              {website ? 'Sign Up' : 'No Website Available'}
-            </Text>
-            {website && (
-              <MaterialCommunityIcons
-                name="arrow-right"
-                size={18}
-                color={COLORS.textLight}
-              />
-            )}
-          </TouchableOpacity>
+          {!isOrganization && (
+  <TouchableOpacity
+    style={styles.signUpButton}
+    onPress={handleSignUp}
+    disabled={!website}
+  >
+    <Text style={styles.signUpButtonText}>
+      {website ? 'Sign Up' : 'No Website Available'}
+    </Text>
+    {website && (
+      <MaterialCommunityIcons
+        name="arrow-right"
+        size={18}
+        color={COLORS.textLight}
+      />
+    )}
+  </TouchableOpacity>
+)}
           {isUpcoming && !isOrganization && (
             <TouchableOpacity
               style={[
@@ -363,17 +383,25 @@ const OpportunityCard = ({
           )}
 
           {isUpcoming && isOrganization && canEdit && (
-            <View style={styles.attendeeCountSection}>
-              <MaterialCommunityIcons
-                name="account-group"
-                size={20}
-                color={COLORS.lightGreen}
-              />
-              <Text style={styles.attendeeCountText}>
-                {attendeeCount} {attendeeCount === 1 ? 'person' : 'people'} attending
-              </Text>
-            </View>
-          )}
+  <TouchableOpacity
+    style={styles.attendeeCountSection}
+    onPress={() => onViewAttendees(id)}  // <-- Make sure this uses onViewAttendees
+  >
+    <MaterialCommunityIcons
+      name="account-group"
+      size={20}
+      color={COLORS.lightGreen}
+    />
+    <Text style={styles.attendeeCountText}>
+      {attendeeCount} {attendeeCount === 1 ? 'person' : 'people'} attending
+    </Text>
+    <MaterialCommunityIcons
+      name="chevron-right"
+      size={20}
+      color={COLORS.lightGreen}
+    />
+  </TouchableOpacity>
+)}
         </View>
       )}
     </TouchableOpacity>
@@ -410,6 +438,19 @@ export default function SearchScreen() {
   const [eventHour, setEventHour] = useState(null);
   const [eventMinute, setEventMinute] = useState(null);
   const [eventAmPm, setEventAmPm] = useState(null);
+  const [attendees, setAttendees] = useState<{ [key: string]: string[] }>({});
+const [showAttendeeModal, setShowAttendeeModal] = useState(false);
+const [selectedOpportunityAttendees, setSelectedOpportunityAttendees] = useState<string[]>([]);
+const [attendeeDetails, setAttendeeDetails] = useState<Array<{
+  name: string;
+  email: string;
+  phone: string;
+}>>([]);
+const [loadingAttendees, setLoadingAttendees] = useState(false);
+  
+
+  
+
 
   // Dropdown item lists
   const monthItems = [
@@ -451,7 +492,6 @@ export default function SearchScreen() {
   ];
 
   // Add this with your other state declarations
-  const [attendees, setAttendees] = useState<{ [key: string]: string[] }>({});
 
   // Add this useEffect to listen for attendee changes
   useEffect(() => {
@@ -592,15 +632,16 @@ useEffect(() => {
     }
   };
 
-  // Get Firestore opportunities
-  useEffect(() => {
-    const colRef = collection(db, 'VolunteerOpportunity');
+// Get Firestore opportunities
+useEffect(() => {
+  const colRef = collection(db, 'VolunteerOpportunity');
 
-    const unsubscribe = onSnapshot(
-      colRef,
-      (snapshot) => {
-        const data: Opportunity[] = snapshot.docs.map((doc) => {
-          const raw = doc.data() as any;
+  const unsubscribe = onSnapshot(
+    colRef,
+    async (snapshot) => {
+      const data: Opportunity[] = await Promise.all(
+        snapshot.docs.map(async (docSnapshot) => { // CHANGED: doc to docSnapshot
+          const raw = docSnapshot.data() as any; // CHANGED: doc to docSnapshot
 
           const location =
             raw.Location &&
@@ -612,8 +653,23 @@ useEffect(() => {
               }
               : undefined;
 
+          // Fetch organization name
+          let organizationName = undefined;
+          if (raw.postedBy) {
+            try {
+              const userDocRef = doc(db, 'UserInformation', raw.postedBy);
+              const userDoc = await getDoc(userDocRef);
+              if (userDoc.exists()) {
+                const userData = userDoc.data() as any; // CHANGED: Added 'as any'
+                organizationName = userData.businessName || undefined;
+              }
+            } catch (error) {
+              console.error('Error fetching organization name:', error);
+            }
+          }
+
           return {
-            id: doc.id,
+            id: docSnapshot.id, // CHANGED: doc to docSnapshot
             title: raw.Business ?? 'Untitled',
             description: raw.Description ?? '',
             email: raw.Email ?? '',
@@ -621,25 +677,27 @@ useEffect(() => {
             fax: raw.Fax ?? '',
             website: raw.Website ?? '',
             location,
+            address: raw.Address || undefined,
             eventType: raw.eventType ?? 'ongoing',
             eventDate: raw.eventDate ?? '',
-            eventTime: raw.eventTime ?? '',   // <-- ADD THIS
+            eventTime: raw.eventTime ?? '',
             postedBy: raw.postedBy ?? '',
+            organizationName,
           };
+        })
+      );
 
-        });
+      setOpportunities(data);
+      setLoading(false);
+    },
+    (error) => {
+      console.error('Error fetching volunteer opportunities:', error);
+      setLoading(false);
+    }
+  );
 
-        setOpportunities(data);
-        setLoading(false);
-      },
-      (error) => {
-        console.error('Error fetching volunteer opportunities:', error);
-        setLoading(false);
-      }
-    );
-
-    return () => unsubscribe();
-  }, []);
+  return () => unsubscribe();
+}, []);
 
   // Get user location
   useEffect(() => {
@@ -908,6 +966,47 @@ useEffect(() => {
     );
   };
 
+  const fetchAttendeeDetails = async (attendeeIds: string[]) => {
+  setLoadingAttendees(true);
+  try {
+    const details = await Promise.all(
+      attendeeIds.map(async (userId) => {
+        const userDocRef = doc(db, 'UserInformation', userId);
+        const userDoc = await getDoc(userDocRef);
+        
+        if (userDoc.exists()) {
+          const data = userDoc.data();
+          return {
+            name: data.accountType === 'user' 
+              ? `${data.firstName} ${data.lastName}`
+              : data.businessName,
+            email: data.email || 'No email provided',
+            phone: data.phoneNumber || 'No phone provided',
+          };
+        }
+        return {
+          name: 'Unknown User',
+          email: 'No email',
+          phone: 'No phone',
+        };
+      })
+    );
+    setAttendeeDetails(details);
+  } catch (error) {
+    console.error('Error fetching attendee details:', error);
+    Alert.alert('Error', 'Failed to load attendee information');
+  } finally {
+    setLoadingAttendees(false);
+  }
+};
+
+const handleViewAttendees = async (opportunityId: string) => {
+  const attendeeList = attendees[opportunityId] || [];
+  setSelectedOpportunityAttendees(attendeeList);
+  setShowAttendeeModal(true);
+  await fetchAttendeeDetails(attendeeList);
+};
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView ref={scrollViewRef} contentContainerStyle={styles.contentContainer}>
@@ -987,6 +1086,7 @@ useEffect(() => {
                 onToggleAttendance={toggleAttendance}
                 attendeeCount={(attendees[opportunity.id] || []).length}
                 isOrganization={isOrganization}
+                onViewAttendees={handleViewAttendees}
               />
             ))
           ) : (
@@ -1022,7 +1122,7 @@ useEffect(() => {
 
                 <TextInput
                   style={styles.input}
-                  placeholder="Organization/Event Name *"
+                  placeholder="Event Name *"
                   placeholderTextColor="#777"
                   value={formData.title}
                   onChangeText={(text) => setFormData({ ...formData, title: text })}
@@ -1040,7 +1140,7 @@ useEffect(() => {
 
                 <TextInput
                   style={styles.input}
-                  placeholder="Email"
+                  placeholder="Contact Email"
                   placeholderTextColor="#777"
                   value={formData.email}
                   onChangeText={(text) => setFormData({ ...formData, email: text })}
@@ -1050,7 +1150,7 @@ useEffect(() => {
 
                 <TextInput
                   style={styles.input}
-                  placeholder="Phone"
+                  placeholder="Contact Phone"
                   placeholderTextColor="#777"
                   value={formData.phone}
                   onChangeText={(text) => setFormData({ ...formData, phone: text })}
@@ -1221,11 +1321,225 @@ useEffect(() => {
         </View>
       </Modal>
 
+      {/* Attendee List Modal */}
+<Modal
+  visible={showAttendeeModal}
+  transparent
+  animationType="slide"
+  onRequestClose={() => setShowAttendeeModal(false)}
+>
+  <View style={styles.modalOverlay}>
+    <View style={styles.attendeeModalContent}>
+      <View style={styles.attendeeModalHeader}>
+        <Text style={styles.attendeeModalTitle}>Registered Attendees</Text>
+        <TouchableOpacity onPress={() => setShowAttendeeModal(false)}>
+          <MaterialCommunityIcons name="close" size={24} color={COLORS.textDark} />
+        </TouchableOpacity>
+      </View>
+
+      {loadingAttendees ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.darkGreen} />
+          <Text style={styles.loadingText}>Loading attendees...</Text>
+        </View>
+      ) : attendeeDetails.length > 0 ? (
+        <ScrollView style={styles.attendeeList}>
+          {attendeeDetails.map((attendee, index) => (
+            <View key={index} style={styles.attendeeCard}>
+              <View style={styles.attendeeIconCircle}>
+                <MaterialCommunityIcons
+                  name="account"
+                  size={24}
+                  color={COLORS.darkGreen}
+                />
+              </View>
+              <View style={styles.attendeeInfo}>
+                <Text style={styles.attendeeName}>{attendee.name}</Text>
+                
+                <TouchableOpacity 
+                  style={styles.attendeeContactRow}
+                  onPress={() => {
+                    if (attendee.email !== 'No email provided') {
+                      Linking.openURL(`mailto:${attendee.email}`);
+                    }
+                  }}
+                >
+                  <MaterialCommunityIcons
+                    name="email"
+                    size={14}
+                    color={COLORS.lightGreen}
+                  />
+                  <Text style={[
+                    styles.attendeeContactText,
+                    attendee.email !== 'No email provided' && styles.attendeeContactLink
+                  ]}>
+                    {attendee.email}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={styles.attendeeContactRow}
+                  onPress={() => {
+                    if (attendee.phone !== 'No phone provided') {
+                      const cleanedNumber = attendee.phone.replace(/[^\d+]/g, '');
+                      Linking.openURL(`tel:${cleanedNumber}`);
+                    }
+                  }}
+                >
+                  <MaterialCommunityIcons
+                    name="phone"
+                    size={14}
+                    color={COLORS.lightGreen}
+                  />
+                  <Text style={[
+                    styles.attendeeContactText,
+                    attendee.phone !== 'No phone provided' && styles.attendeeContactLink
+                  ]}>
+                    {attendee.phone}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))}
+        </ScrollView>
+      ) : (
+        <View style={styles.emptyAttendeeState}>
+          <MaterialCommunityIcons
+            name="account-group-outline"
+            size={64}
+            color={COLORS.timeFilter}
+          />
+          <Text style={styles.emptyAttendeeText}>No attendees yet</Text>
+        </View>
+      )}
+
+      <TouchableOpacity
+        style={styles.closeAttendeeModalButton}
+        onPress={() => setShowAttendeeModal(false)}
+      >
+        <Text style={styles.closeAttendeeModalText}>Close</Text>
+      </TouchableOpacity>
+    </View>
+  </View>
+</Modal>
+
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+
+  organizationRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 4,
+  marginBottom: 2,
+},
+organizationText: {
+  fontSize: 12,
+  color: COLORS.lightGreen,
+  fontWeight: '600',
+  fontStyle: 'italic',
+},
+
+attendeeModalContent: {
+  backgroundColor: COLORS.background,
+  marginHorizontal: 20,
+  marginTop: 80,
+  marginBottom: 80,
+  borderRadius: 14,
+  flex: 1,
+  maxHeight: '85%',
+},
+attendeeModalHeader: {
+  flexDirection: 'row',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  padding: 20,
+  borderBottomWidth: 1,
+  borderBottomColor: COLORS.timeFilter,
+},
+attendeeModalTitle: {
+  fontSize: 20,
+  fontWeight: '700',
+  color: COLORS.darkGreen,
+},
+loadingContainer: {
+  padding: 40,
+  alignItems: 'center',
+  justifyContent: 'center',
+},
+loadingText: {
+  marginTop: 12,
+  fontSize: 14,
+  color: COLORS.textDark,
+},
+attendeeList: {
+  flex: 1,
+  padding: 16,
+},
+attendeeCard: {
+  flexDirection: 'row',
+  backgroundColor: COLORS.card,
+  borderRadius: 12,
+  padding: 16,
+  marginBottom: 12,
+  alignItems: 'flex-start',
+  gap: 12,
+},
+attendeeIconCircle: {
+  backgroundColor: COLORS.textLight,
+  padding: 10,
+  borderRadius: 30,
+  justifyContent: 'center',
+  alignItems: 'center',
+},
+attendeeInfo: {
+  flex: 1,
+},
+attendeeName: {
+  fontSize: 16,
+  fontWeight: '700',
+  color: COLORS.textDark,
+  marginBottom: 8,
+},
+attendeeContactRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 6,
+  marginBottom: 4,
+},
+attendeeContactText: {
+  fontSize: 13,
+  color: COLORS.textDark,
+},
+attendeeContactLink: {
+  textDecorationLine: 'underline',
+  color: COLORS.darkGreen,
+},
+emptyAttendeeState: {
+  padding: 60,
+  alignItems: 'center',
+  justifyContent: 'center',
+},
+emptyAttendeeText: {
+  marginTop: 16,
+  fontSize: 16,
+  color: COLORS.textDark,
+  fontWeight: '600',
+},
+closeAttendeeModalButton: {
+  backgroundColor: COLORS.darkGreen,
+  padding: 16,
+  margin: 16,
+  borderRadius: 10,
+  alignItems: 'center',
+},
+closeAttendeeModalText: {
+  color: COLORS.textLight,
+  fontSize: 16,
+  fontWeight: '700',
+},
   container: {
     flex: 1,
     backgroundColor: COLORS.background,

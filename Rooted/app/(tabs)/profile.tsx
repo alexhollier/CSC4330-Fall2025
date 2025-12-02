@@ -502,6 +502,7 @@ const [currentPassword, setCurrentPassword] = useState('');
   const [newOrgName, setNewOrgName] = useState("");
   const [newOrgRequired, setNewOrgRequired] = useState("");
   const [newOrgFrequency, setNewOrgFrequency] = useState<'weekly' | 'monthly' | 'semesterly' | 'yearly'>('weekly');
+  const [newOrgCompleted, setNewOrgCompleted] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // edit-hour mode modal (The 3 options: add/remove/required)
@@ -1067,45 +1068,60 @@ const handleEditProfile = async () => {
   // -------------------------------------------------------
 
   const handleAddOrganization = async () => {
-    if (!newOrgName.trim()) {
-      Alert.alert("Error", "Please enter an organization name");
-      return;
-    }
+  if (!newOrgName.trim()) {
+    Alert.alert("Error", "Please enter an organization name");
+    return;
+  }
 
-    const required = newOrgRequired.trim();
-    const parsedRequired = required ? parseInt(required) : undefined;
+  if (!newOrgRequired.trim()) {
+    Alert.alert("Error", "Please enter required hours");
+    return;
+  }
 
-    if (required && (isNaN(parsedRequired!) || parsedRequired! < 0)) {
-      Alert.alert("Error", "Required hours must be a non-negative number.");
-      return;
-    }
+  const required = newOrgRequired.trim();
+  const parsedRequired = parseInt(required);
 
-    setIsSubmitting(true);
+  if (isNaN(parsedRequired) || parsedRequired < 0) {
+    Alert.alert("Error", "Required hours must be a non-negative number.");
+    return;
+  }
 
-    const newOrg: Organization = {
-      name: newOrgName.trim(),
-      requiredHours: parsedRequired,
-      totalHours: 0,
-      frequency: newOrgFrequency,
-    };
+  // Parse completed hours (default to 0 if empty)
+  const completed = newOrgCompleted.trim();
+  const parsedCompleted = completed ? parseInt(completed) : 0;
 
-    try {
-      const ref = doc(db, "UserInformation", user!.uid);
-      await updateDoc(ref, {
-        organizations: arrayUnion(newOrg),
-      });
+  if (completed && (isNaN(parsedCompleted) || parsedCompleted < 0)) {
+    Alert.alert("Error", "Completed hours must be a non-negative number.");
+    return;
+  }
 
-      setNewOrgName("");
-      setNewOrgRequired("");
-      setNewOrgFrequency('weekly');
-      setShowAddOrgModal(false);
-    } catch (err) {
-      console.error("Add org error:", err);
-      Alert.alert("Error", "Failed to add organization. Please try again.");
-    } finally {
-      setIsSubmitting(false);
-    }
+  setIsSubmitting(true);
+
+  const newOrg: Organization = {
+    name: newOrgName.trim(),
+    requiredHours: parsedRequired,
+    totalHours: parsedCompleted,
+    frequency: newOrgFrequency,
   };
+
+  try {
+    const ref = doc(db, "UserInformation", user!.uid);
+    await updateDoc(ref, {
+      organizations: arrayUnion(newOrg),
+    });
+
+    setNewOrgName("");
+    setNewOrgRequired("");
+    setNewOrgCompleted("");
+    setNewOrgFrequency('weekly');
+    setShowAddOrgModal(false);
+  } catch (err) {
+    console.error("Add org error:", err);
+    Alert.alert("Error", "Failed to add organization. Please try again.");
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
   // -------------------------------------------------------
   // EDIT HOURS — open mode selection modal
@@ -1308,7 +1324,7 @@ const handleEditProfile = async () => {
             </Text>
           )}
           <Text style={styles.orgHours}>
-            Total: {org.totalHours} hours
+            Completed: {org.totalHours} hours
           </Text>
         </View>
       </View>
@@ -1583,34 +1599,92 @@ const handleEditProfile = async () => {
           </View>
         )}
 
-        {/* ORGANIZATIONS */}
         {activeTab === "organizations" && accountType === 'user' && (
-          <View style={styles.tabContent}>
-            {organizations.map((org, idx) => (
-              <OrganizationCard
-                key={idx}
-                org={org}
-                onEditHours={() => handleEditHours(org.name)}
-                onDelete={() => handleDeleteOrg(org.name)}
-              />
-            ))}
+  <View style={styles.tabContent}>
+    {organizations.length > 0 ? (
+      <>
+        {organizations.map((org, idx) => (
+          <OrganizationCard
+            key={idx}
+            org={org}
+            onEditHours={() => handleEditHours(org.name)}
+            onDelete={() => handleDeleteOrg(org.name)}
+          />
+        ))}
 
-            <TouchableOpacity
-              style={styles.addOrgButton}
-              onPress={() => setShowAddOrgModal(true)}
-            >
-              <Logo
-                name="plus-circle"
-                size={24}
-                color={COLORS.textLight}
-                style={styles.iconMarginRight}
-              />
-              <Text style={styles.addOrgButtonText}>
-                Add Organization
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
+        <TouchableOpacity
+          style={styles.addOrgButton}
+          onPress={() => setShowAddOrgModal(true)}
+        >
+          <Logo
+            name="plus-circle"
+            size={24}
+            color={COLORS.textLight}
+            style={styles.iconMarginRight}
+          />
+          <Text style={styles.addOrgButtonText}>
+            Add Organization
+          </Text>
+        </TouchableOpacity>
+      </>
+    ) : (
+      <View style={styles.emptyState}>
+        <Logo
+          name="office-building-outline"
+          size={64}
+          color={COLORS.tabInactive}
+        />
+        <Text style={styles.emptyText}>No Organizations Yet</Text>
+        <Text style={styles.emptySubtext}>
+          Add organizations to track your volunteer hours and requirements
+        </Text>
+        <TouchableOpacity
+          style={styles.addOrgButton}
+          onPress={() => setShowAddOrgModal(true)}
+        >
+          <Logo
+            name="plus-circle"
+            size={24}
+            color={COLORS.textLight}
+            style={styles.iconMarginRight}
+          />
+          <Text style={styles.addOrgButtonText}>
+            Add Your First Organization
+          </Text>
+        </TouchableOpacity>
+      </View>
+    )}
+  </View>
+)}
+
+        {/* Edit Profile and Sign Out Buttons - Always visible at bottom */}
+<View style={styles.bottomActions}>
+  <TouchableOpacity
+    style={styles.editProfileButton}
+    onPress={() => setShowEditModal(true)}
+  >
+    <Logo
+      name="account-edit"
+      size={20}
+      color={COLORS.textLight}
+      style={styles.iconMarginRight}
+    />
+    <Text style={styles.editProfileButtonText}>Edit Profile</Text>
+  </TouchableOpacity>
+
+  <TouchableOpacity
+    style={styles.signOutButton}
+    onPress={handleSignOut}
+  >
+    <Logo
+      name="logout"
+      size={20}
+      color="#ff4444"
+      style={styles.iconMarginRight}
+    />
+    <Text style={styles.signOutButtonText}>Sign Out</Text>
+  </TouchableOpacity>
+</View>
 
         {/* Edit Profile Modal */}
 <Modal
@@ -1709,17 +1783,6 @@ const handleEditProfile = async () => {
               editable={!editLoading}
             />
 
-            <TextInput
-              style={styles.input}
-              placeholder="Email *"
-              placeholderTextColor="#999"
-              autoCapitalize="none"
-              keyboardType="email-address"
-              value={editEmail}
-              onChangeText={setEditEmail}
-              editable={!editLoading}
-            />
-
             {/* Password Section */}
             <View style={styles.passwordSection}>
               <Text style={styles.sectionLabel}>Change Password (Optional)</Text>
@@ -1795,20 +1858,30 @@ const handleEditProfile = async () => {
 </Modal>
       </ScrollView>
 
-      {/* ADD ORG MODAL */}
-      <Modal
-        visible={showAddOrgModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowAddOrgModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+{/* ADD ORG MODAL */}
+<Modal
+  visible={showAddOrgModal}
+  transparent
+  animationType="fade"
+  onRequestClose={() => setShowAddOrgModal(false)}
+>
+  <KeyboardAvoidingView
+    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    style={{ flex: 1 }}
+  >
+    <TouchableOpacity 
+      activeOpacity={1} 
+      onPress={Keyboard.dismiss}
+      style={styles.modalOverlay}
+    >
+      <View style={styles.modalScrollContent}>
+        <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
+          <View style={styles.modalContentFixed}>
             <Text style={styles.modalTitle}>Add Organization</Text>
 
             <TextInput
               style={styles.input}
-              placeholder="Organization Name"
+              placeholder="Organization Name *"
               placeholderTextColor="#999"
               value={newOrgName}
               onChangeText={setNewOrgName}
@@ -1816,38 +1889,42 @@ const handleEditProfile = async () => {
 
             <TextInput
               style={styles.input}
-              placeholder="Required Hours (optional)"
+              placeholder="Required Hours *"
               placeholderTextColor="#999"
               value={newOrgRequired}
               onChangeText={setNewOrgRequired}
               keyboardType="numeric"
             />
 
-            {/* Frequency Selection for Add Organization */}
-            {newOrgRequired.trim() !== "" && (
-              <>
-                <Text style={styles.frequencyLabel}>Frequency</Text>
-                <View style={styles.frequencyContainer}>
-                  {(['weekly', 'monthly', 'semesterly', 'yearly'] as const).map((freq) => (
-                    <TouchableOpacity
-                      key={freq}
-                      style={[
-                        styles.frequencyPill,
-                        newOrgFrequency === freq && styles.frequencyPillSelected
-                      ]}
-                      onPress={() => setNewOrgFrequency(freq)}
-                    >
-                      <Text style={[
-                        styles.frequencyPillText,
-                        newOrgFrequency === freq && styles.frequencyPillTextSelected
-                      ]}>
-                        {freq.charAt(0).toUpperCase() + freq.slice(1)}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </>
-            )}
+            <Text style={styles.frequencyLabel}>Frequency *</Text>
+            <View style={styles.frequencyContainer}>
+              {(['weekly', 'monthly', 'semesterly', 'yearly'] as const).map((freq) => (
+                <TouchableOpacity
+                  key={freq}
+                  style={[
+                    styles.frequencyPill,
+                    newOrgFrequency === freq && styles.frequencyPillSelected
+                  ]}
+                  onPress={() => setNewOrgFrequency(freq)}
+                >
+                  <Text style={[
+                    styles.frequencyPillText,
+                    newOrgFrequency === freq && styles.frequencyPillTextSelected
+                  ]}>
+                    {freq.charAt(0).toUpperCase() + freq.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TextInput
+              style={styles.input}
+              placeholder="Completed Hours (optional)"
+              placeholderTextColor="#999"
+              value={newOrgCompleted}
+              onChangeText={setNewOrgCompleted}
+              keyboardType="numeric"
+            />
 
             <View style={styles.modalButtons}>
               <TouchableOpacity
@@ -1856,6 +1933,7 @@ const handleEditProfile = async () => {
                   setShowAddOrgModal(false);
                   setNewOrgName("");
                   setNewOrgRequired("");
+                  setNewOrgCompleted("");
                   setNewOrgFrequency('weekly');
                 }}
               >
@@ -1871,8 +1949,11 @@ const handleEditProfile = async () => {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
-      </Modal>
+        </TouchableOpacity>
+      </View>
+    </TouchableOpacity>
+  </KeyboardAvoidingView>
+</Modal>
 
       {/* EDIT HOUR MODE MODAL (Add/Remove/Required/Name selection) */}
       <Modal
@@ -2058,6 +2139,26 @@ const handleEditProfile = async () => {
 // -------------------------------------------------------
 
 const styles = StyleSheet.create({
+modalContentFixed: {
+  backgroundColor: COLORS.background,
+  borderRadius: 16,
+  paddingHorizontal: 24,
+  paddingTop: 24,
+  paddingBottom: 32,
+  width: 340,
+},
+modalScrollContent: {
+  flex: 1,
+  justifyContent: 'center',
+  alignItems: 'center',
+  paddingHorizontal: 20,
+},
+bottomActions: {
+  paddingHorizontal: 20,
+  paddingTop: 24,
+  paddingBottom: 40,
+  gap: 12,
+},
   passwordSection: {
   marginTop: 16,
   paddingTop: 16,
@@ -2125,7 +2226,7 @@ editProfileButton: {
   paddingVertical: 14,
   borderRadius: 12,
   marginHorizontal: 20,
-  marginTop: 20,
+  marginTop: 0,
   gap: 8,
 },
 editProfileButtonText: {
@@ -2263,7 +2364,7 @@ dateText: {
   backgroundColor: '#fff0f0',
   padding: 18,
   borderRadius: 12,
-  marginTop: 40,
+  marginTop: 10,
   marginHorizontal: 20,
   marginBottom: 40,
   borderWidth: 1,
@@ -2512,7 +2613,7 @@ cardHeaderRight: {
   },
   emptyState: {
     alignItems: "center",
-    paddingVertical: 60,
+    paddingVertical: 5,
   },
   emptyText: {
     fontSize: 18,
@@ -2544,7 +2645,7 @@ cardHeaderRight: {
     flex: 1,
   },
   orgInfo: {
-    marginLeft: 12,
+    marginLeft: 1,
     flex: 1,
   },
   orgName: {
@@ -2586,6 +2687,7 @@ cardHeaderRight: {
     padding: 18,
     borderRadius: 12,
     marginTop: 24,
+    marginBottom: 0,
   },
   addOrgButtonText: {
     fontSize: 16,
