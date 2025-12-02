@@ -9,8 +9,13 @@ import {
   Modal,
   Alert,
   Linking,
+  KeyboardAvoidingView,
+  Platform,
+  Keyboard,
+  ActivityIndicator,
 } from "react-native";
 import Logo from "react-native-vector-icons/MaterialCommunityIcons";
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useNavigation } from "@react-navigation/native";
 import { useEffect, useState } from "react";
 import {
@@ -27,7 +32,10 @@ import {
 import { db } from "../../firebaseConfig";
 import { useAuth } from "../../contexts/AuthContext";
 import Svg, { Circle } from "react-native-svg";
-import { signOut } from 'firebase/auth';
+import { signOut, updateEmail, 
+  updatePassword, 
+  reauthenticateWithCredential, 
+  EmailAuthProvider  } from 'firebase/auth';
 import { auth } from '../../firebaseConfig';
 
 const COLORS = {
@@ -452,6 +460,23 @@ const handleSignOut = async () => {
 
 export default function Index() {
   const { user } = useAuth();
+  const [userInfo, setUserInfo] = useState<any>(null);
+const [showEditModal, setShowEditModal] = useState(false);
+const [editLoading, setEditLoading] = useState(false);
+
+// Edit form fields
+const [editFirstName, setEditFirstName] = useState('');
+const [editLastName, setEditLastName] = useState('');
+const [editBusinessName, setEditBusinessName] = useState('');
+const [editContactFirstName, setEditContactFirstName] = useState('');
+const [editContactLastName, setEditContactLastName] = useState('');
+const [editPhoneNumber, setEditPhoneNumber] = useState('');
+const [editWebsite, setEditWebsite] = useState('');
+const [editEmail, setEditEmail] = useState('');
+const [editPassword, setEditPassword] = useState('');
+const [editConfirmPassword, setEditConfirmPassword] = useState('');
+const [currentPassword, setCurrentPassword] = useState('');
+
   const navigation = useNavigation();
 
   const [accountType, setAccountType] = useState<'user' | 'organization'>('user');
@@ -673,6 +698,162 @@ const handleUnregisterAttendance = async (opportunityId: string) => {
 
     return () => unsubscribe();
   }, [user]);
+
+// Fetch user info
+useEffect(() => {
+  const fetchUserInfo = async () => {
+    if (!user) return;
+    
+    try {
+      const userDocRef = doc(db, 'UserInformation', user.uid);
+      const userDoc = await getDoc(userDocRef);
+      
+      if (userDoc.exists()) {
+        const data = userDoc.data();
+        setUserInfo(data);
+        
+        // Pre-fill edit form
+        setEditEmail(user.email || ''); // Add this line
+        if (data.accountType === 'user') {
+          setEditFirstName(data.firstName || '');
+          setEditLastName(data.lastName || '');
+        } else {
+          setEditBusinessName(data.businessName || '');
+          setEditContactFirstName(data.contactFirstName || '');
+          setEditContactLastName(data.contactLastName || '');
+          setEditWebsite(data.website || '');
+        }
+        setEditPhoneNumber(data.phoneNumber || '');
+      }
+    } catch (error) {
+      console.error('Error fetching user info:', error);
+    }
+  };
+
+  fetchUserInfo();
+}, [user]);
+
+const handleEditProfile = async () => {
+  if (!user || !userInfo) return;
+
+  // Validation
+  if (userInfo.accountType === 'user') {
+    if (!editFirstName || !editLastName) {
+      Alert.alert('Error', 'Please fill in all required fields');
+      return;
+    }
+  } else {
+    if (!editBusinessName || !editContactFirstName || !editContactLastName) {
+      Alert.alert('Error', 'Please fill in all required fields');
+      return;
+    }
+  }
+
+  if (!editPhoneNumber) {
+    Alert.alert('Error', 'Phone number is required');
+    return;
+  }
+
+  if (!editEmail) {
+    Alert.alert('Error', 'Email is required');
+    return;
+  }
+
+  // Validate email format
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(editEmail)) {
+    Alert.alert('Error', 'Please enter a valid email address');
+    return;
+  }
+
+  // Password validation
+  if (editPassword || editConfirmPassword) {
+    if (editPassword !== editConfirmPassword) {
+      Alert.alert('Error', 'Passwords do not match');
+      return;
+    }
+    if (editPassword.length < 6) {
+      Alert.alert('Error', 'Password must be at least 6 characters');
+      return;
+    }
+  }
+
+  // Check if email or password is being changed - require current password
+  const emailChanged = editEmail !== user.email;
+  const passwordChanged = editPassword.trim() !== '';
+
+  if ((emailChanged || passwordChanged) && !currentPassword) {
+    Alert.alert('Security Required', 'Please enter your current password to change email or password');
+    return;
+  }
+
+  setEditLoading(true);
+  try {
+    // Reauthenticate if changing email or password
+    if ((emailChanged || passwordChanged) && currentPassword) {
+      const credential = EmailAuthProvider.credential(
+        user.email!,
+        currentPassword
+      );
+      await reauthenticateWithCredential(user, credential);
+    }
+
+    // Update email if changed
+    if (emailChanged) {
+      await updateEmail(user, editEmail);
+    }
+
+    // Update password if provided
+    if (passwordChanged) {
+      await updatePassword(user, editPassword);
+    }
+
+    // Update Firestore
+    const userDocRef = doc(db, 'UserInformation', user.uid);
+    const updateData: any = {
+      email: editEmail,
+      phoneNumber: editPhoneNumber,
+    };
+
+    if (userInfo.accountType === 'user') {
+      updateData.firstName = editFirstName;
+      updateData.lastName = editLastName;
+    } else {
+      updateData.businessName = editBusinessName;
+      updateData.contactFirstName = editContactFirstName;
+      updateData.contactLastName = editContactLastName;
+      updateData.website = editWebsite;
+    }
+
+    await updateDoc(userDocRef, updateData);
+    
+    // Update local state
+    setUserInfo({ ...userInfo, ...updateData });
+    
+    // Clear password fields
+    setEditPassword('');
+    setEditConfirmPassword('');
+    setCurrentPassword('');
+    
+    Alert.alert('Success', 'Profile updated successfully');
+    setShowEditModal(false);
+  } catch (error: any) {
+    console.error('Error updating profile:', error);
+    
+    // Handle specific errors
+    if (error.code === 'auth/wrong-password') {
+      Alert.alert('Error', 'Current password is incorrect');
+    } else if (error.code === 'auth/email-already-in-use') {
+      Alert.alert('Error', 'This email is already in use by another account');
+    } else if (error.code === 'auth/requires-recent-login') {
+      Alert.alert('Error', 'For security reasons, please sign out and sign in again before changing your email or password');
+    } else {
+      Alert.alert('Error', 'Failed to update profile. Please try again.');
+    }
+  } finally {
+    setEditLoading(false);
+  }
+};
 
     // Handle delete opportunity
   const handleDeleteOpportunity = async (opportunityId: string) => {
@@ -1157,20 +1338,44 @@ const handleUnregisterAttendance = async (opportunityId: string) => {
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.contentContainer}>
         {/* HERO */}
-        <View style={styles.heroSection}>
-          <View style={styles.logoHeader}>
-            <Logo
-              name="tree-outline"
-              size={30}
-              color={COLORS.darkGreen}
-              style={styles.iconMarginRight}
-            />
-            <Text style={styles.logoText}>ROOTED</Text>
-          </View>
-          <Text style={styles.accountTypeBadge}>
-            {accountType === 'organization' ? 'Organization Account' : 'Volunteer Account'}
-          </Text>
-        </View>
+<View style={styles.heroSection}>
+  <View style={styles.logoHeader}>
+    <Logo
+      name="tree-outline"
+      size={30}
+      color={COLORS.darkGreen}
+      style={styles.iconMarginRight}
+    />
+    <Text style={styles.logoText}>ROOTED</Text>
+  </View>
+  
+  {/* Profile Section */}
+  <View style={styles.profileSection}>
+    <View style={styles.profileHeader}>
+      <View style={styles.avatarCircle}>
+        <MaterialIcons name="person" size={40} color={COLORS.darkGreen} />
+      </View>
+      <View style={styles.profileInfo}>
+        {userInfo && (
+          <>
+            {userInfo.accountType === 'user' ? (
+              <Text style={styles.profileName}>
+                {userInfo.firstName} {userInfo.lastName}
+              </Text>
+            ) : (
+              <Text style={styles.profileName}>{userInfo.businessName}</Text>
+            )}
+            <Text style={styles.profileEmail}>{user?.email}</Text>
+          </>
+        )}
+      </View>
+    </View>
+  </View>
+  
+  <Text style={styles.accountTypeBadge}>
+    {accountType === 'organization' ? 'Organization Account' : 'Volunteer Account'}
+  </Text>
+</View>
 
         {/* TABS - Conditionally render based on account type */}
         {accountType === 'user' ? (
@@ -1395,19 +1600,187 @@ const handleUnregisterAttendance = async (opportunityId: string) => {
           </View>
         )}
 
-        {/* Sign Out Button */}
-        <TouchableOpacity 
-          style={styles.signOutButton}
-          onPress={handleSignOut}
-        >
-          <Logo
-            name="logout"
-            size={24}
-            color="#ff4444"
-            style={styles.iconMarginRight}
-          />
-          <Text style={styles.signOutButtonText}>Sign Out</Text>
+        {/* Edit Profile Modal */}
+<Modal
+  visible={showEditModal}
+  transparent
+  animationType="slide"
+  onRequestClose={() => setShowEditModal(false)}
+>
+  <KeyboardAvoidingView
+    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    style={{ flex: 1 }}
+  >
+    <TouchableOpacity 
+      activeOpacity={1} 
+      onPress={Keyboard.dismiss}
+      style={styles.modalOverlay}
+    >
+      <ScrollView 
+        contentContainerStyle={styles.editModalScrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Edit Profile</Text>
+
+            {userInfo?.accountType === 'user' ? (
+              <>
+                <TextInput
+                  style={styles.input}
+                  placeholder="First Name *"
+                  placeholderTextColor="#999"
+                  value={editFirstName}
+                  onChangeText={setEditFirstName}
+                  editable={!editLoading}
+                />
+
+                <TextInput
+                  style={styles.input}
+                  placeholder="Last Name *"
+                  placeholderTextColor="#999"
+                  value={editLastName}
+                  onChangeText={setEditLastName}
+                  editable={!editLoading}
+                />
+              </>
+            ) : (
+              <>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Business Name *"
+                  placeholderTextColor="#999"
+                  value={editBusinessName}
+                  onChangeText={setEditBusinessName}
+                  editable={!editLoading}
+                />
+
+                <TextInput
+                  style={styles.input}
+                  placeholder="Contact First Name *"
+                  placeholderTextColor="#999"
+                  value={editContactFirstName}
+                  onChangeText={setEditContactFirstName}
+                  editable={!editLoading}
+                />
+
+                <TextInput
+                  style={styles.input}
+                  placeholder="Contact Last Name *"
+                  placeholderTextColor="#999"
+                  value={editContactLastName}
+                  onChangeText={setEditContactLastName}
+                  editable={!editLoading}
+                />
+
+                <TextInput
+                  style={styles.input}
+                  placeholder="Website"
+                  placeholderTextColor="#999"
+                  autoCapitalize="none"
+                  keyboardType="url"
+                  value={editWebsite}
+                  onChangeText={setEditWebsite}
+                  editable={!editLoading}
+                />
+              </>
+            )}
+
+            <TextInput
+              style={styles.input}
+              placeholder="Phone Number *"
+              placeholderTextColor="#999"
+              keyboardType="phone-pad"
+              value={editPhoneNumber}
+              onChangeText={setEditPhoneNumber}
+              editable={!editLoading}
+            />
+
+            <TextInput
+              style={styles.input}
+              placeholder="Email *"
+              placeholderTextColor="#999"
+              autoCapitalize="none"
+              keyboardType="email-address"
+              value={editEmail}
+              onChangeText={setEditEmail}
+              editable={!editLoading}
+            />
+
+            {/* Password Section */}
+            <View style={styles.passwordSection}>
+              <Text style={styles.sectionLabel}>Change Password (Optional)</Text>
+              
+              <TextInput
+                style={styles.input}
+                placeholder="New Password"
+                placeholderTextColor="#999"
+                secureTextEntry
+                value={editPassword}
+                onChangeText={setEditPassword}
+                editable={!editLoading}
+              />
+
+              <TextInput
+                style={styles.input}
+                placeholder="Confirm New Password"
+                placeholderTextColor="#999"
+                secureTextEntry
+                value={editConfirmPassword}
+                onChangeText={setEditConfirmPassword}
+                editable={!editLoading}
+              />
+            </View>
+
+            {/* Current Password - Required for email/password changes */}
+            {(editEmail !== user?.email || editPassword.trim() !== '') && (
+              <View style={styles.securitySection}>
+                <Text style={styles.securityLabel}>Security Verification Required</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Current Password *"
+                  placeholderTextColor="#999"
+                  secureTextEntry
+                  value={currentPassword}
+                  onChangeText={setCurrentPassword}
+                  editable={!editLoading}
+                />
+              </View>
+            )}
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => {
+                  setShowEditModal(false);
+                  setEditPassword('');
+                  setEditConfirmPassword('');
+                  setCurrentPassword('');
+                }}
+                disabled={editLoading}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalButton, styles.confirmButton]}
+                onPress={handleEditProfile}
+                disabled={editLoading}
+              >
+                {editLoading ? (
+                  <ActivityIndicator color={COLORS.textLight} />
+                ) : (
+                  <Text style={styles.confirmButtonText}>Save Changes</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
         </TouchableOpacity>
+      </ScrollView>
+    </TouchableOpacity>
+  </KeyboardAvoidingView>
+</Modal>
       </ScrollView>
 
       {/* ADD ORG MODAL */}
@@ -1670,6 +2043,81 @@ const handleUnregisterAttendance = async (opportunityId: string) => {
 // -------------------------------------------------------
 
 const styles = StyleSheet.create({
+  passwordSection: {
+  marginTop: 16,
+  paddingTop: 16,
+  borderTopWidth: 1,
+  borderTopColor: COLORS.tabInactive,
+},
+sectionLabel: {
+  fontSize: 14,
+  fontWeight: '600',
+  color: COLORS.textDark,
+  marginBottom: 12,
+},
+securitySection: {
+  marginTop: 16,
+  paddingTop: 16,
+  paddingHorizontal: 12,
+  backgroundColor: '#fff3cd',
+  borderRadius: 8,
+  borderWidth: 1,
+  borderColor: '#ffc107',
+},
+securityLabel: {
+  fontSize: 13,
+  fontWeight: '600',
+  color: '#856404',
+  marginBottom: 12,
+},
+  profileSection: {
+  width: '100%',
+  marginTop: 10,
+  marginBottom: 10,
+},
+profileHeader: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 15,
+},
+avatarCircle: {
+  width: 70,
+  height: 70,
+  borderRadius: 35,
+  backgroundColor: COLORS.card,
+  justifyContent: 'center',
+  alignItems: 'center',
+},
+profileInfo: {
+  alignItems: 'flex-start',
+},
+profileName: {
+  fontSize: 20,
+  fontWeight: 'bold',
+  color: COLORS.textDark,
+  marginBottom: 4,
+},
+profileEmail: {
+  fontSize: 14,
+  color: '#666',
+},
+editProfileButton: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'center',
+  backgroundColor: COLORS.lightGreen,
+  paddingVertical: 14,
+  borderRadius: 12,
+  marginHorizontal: 20,
+  marginTop: 20,
+  gap: 8,
+},
+editProfileButtonText: {
+  color: COLORS.textLight,
+  fontSize: 16,
+  fontWeight: '700',
+},
   accountTypeBadge: {
     fontSize: 14,
     fontWeight: '600',
@@ -2130,21 +2578,29 @@ cardHeaderRight: {
     color: COLORS.textLight,
   },
   modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  modalContent: {
-    backgroundColor: COLORS.background,
-    borderRadius: 16,
-    paddingHorizontal: 24,
-    paddingTop: 24,
-    paddingBottom: 32,
-    width: "100%",
-    maxWidth: 400,
-  },
+  flex: 1,
+  backgroundColor: "rgba(0, 0, 0, 0.5)",
+  justifyContent: "center",
+  alignItems: "center",
+},
+editModalScrollContent: {
+  width: '100%',
+  justifyContent: 'center',
+  alignItems: 'center',
+  minHeight: '100%',
+  paddingVertical: 40,
+  paddingHorizontal: 20,
+},
+modalContent: {
+  backgroundColor: COLORS.background,
+  borderRadius: 16,
+  paddingHorizontal: 24,
+  paddingTop: 24,
+  paddingBottom: 32,
+  width: "100%",
+  maxWidth: 400,
+  minWidth: 320,
+},
   modalTitle: {
     fontSize: 20,
     fontWeight: "700",
