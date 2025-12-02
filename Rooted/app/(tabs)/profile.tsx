@@ -477,6 +477,7 @@ export default function Index() {
   const [newOrgName, setNewOrgName] = useState("");
   const [newOrgRequired, setNewOrgRequired] = useState("");
   const [newOrgFrequency, setNewOrgFrequency] = useState<'weekly' | 'monthly' | 'semesterly' | 'yearly'>('weekly');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // edit-hour mode modal (The 3 options: add/remove/required)
   const [editTarget, setEditTarget] = useState<Organization | null>(null);
@@ -898,6 +899,8 @@ const handleUnregisterAttendance = async (opportunityId: string) => {
       return;
     }
 
+    setIsSubmitting(true);
+
     const newOrg: Organization = {
       name: newOrgName.trim(),
       requiredHours: parsedRequired,
@@ -910,14 +913,17 @@ const handleUnregisterAttendance = async (opportunityId: string) => {
       await updateDoc(ref, {
         organizations: arrayUnion(newOrg),
       });
+
+      setNewOrgName("");
+      setNewOrgRequired("");
+      setNewOrgFrequency('weekly');
+      setShowAddOrgModal(false);
     } catch (err) {
       console.error("Add org error:", err);
+      Alert.alert("Error", "Failed to add organization. Please try again.");
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setNewOrgName("");
-    setNewOrgRequired("");
-    setNewOrgFrequency('weekly');
-    setShowAddOrgModal(false);
   };
 
   // -------------------------------------------------------
@@ -979,8 +985,7 @@ const handleUnregisterAttendance = async (opportunityId: string) => {
       return;
     }
 
-    // Immediately close the input modal
-    setShowHourInputModal(false);
+    setIsSubmitting(true);
 
     const updated = organizations.map((org) => {
       if (org.name !== editTarget.name) return org;
@@ -1008,14 +1013,18 @@ const handleUnregisterAttendance = async (opportunityId: string) => {
     try {
       const ref = doc(db, "UserInformation", user.uid);
       await updateDoc(ref, { organizations: updated });
+
+      // Close modals after successful update
+      setShowHourInputModal(false);
+      setEditMode(null);
+      setEditTarget(null);
+      setHourInputValue("");
     } catch (err) {
       console.error("Update org hours error:", err);
+      Alert.alert("Error", "Failed to update hours. Please try again.");
+    } finally {
+      setIsSubmitting(false);
     }
-
-    // Reset state after successful update
-    setEditMode(null);
-    setEditTarget(null);
-    setHourInputValue("");
   };
 
   // -------------------------------------------------------
@@ -1032,8 +1041,7 @@ const handleUnregisterAttendance = async (opportunityId: string) => {
       return;
     }
 
-    // Immediately close the input modal
-    setShowNameInputModal(false);
+    setIsSubmitting(true);
 
     const updated = organizations.map((org) => {
       if (org.name !== editTarget.name) return org;
@@ -1044,14 +1052,18 @@ const handleUnregisterAttendance = async (opportunityId: string) => {
     try {
       const ref = doc(db, "UserInformation", user.uid);
       await updateDoc(ref, { organizations: updated });
+
+      // Close modals after successful update
+      setShowNameInputModal(false);
+      setEditMode(null);
+      setEditTarget(null);
+      setNewNameInputValue("");
     } catch (err) {
       console.error("Update org name error:", err);
+      Alert.alert("Error", "Failed to update name. Please try again.");
+    } finally {
+      setIsSubmitting(false);
     }
-
-    // Reset state after successful update
-    setEditMode(null);
-    setEditTarget(null);
-    setNewNameInputValue("");
   };
 
   // -------------------------------------------------------
@@ -1478,10 +1490,11 @@ const handleUnregisterAttendance = async (opportunityId: string) => {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.modalButton, styles.confirmButton]}
+                style={[styles.modalButton, styles.confirmButton, isSubmitting && styles.disabledButton]}
                 onPress={handleAddOrganization}
+                disabled={isSubmitting}
               >
-                <Text style={styles.confirmButtonText}>Add</Text>
+                <Text style={styles.confirmButtonText}>{isSubmitting ? "Adding..." : "Add"}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1578,10 +1591,11 @@ const handleUnregisterAttendance = async (opportunityId: string) => {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.modalButton, styles.confirmButton]}
+                style={[styles.modalButton, styles.confirmButton, isSubmitting && styles.disabledButton]}
                 onPress={handleEditName}
+                disabled={isSubmitting}
               >
-                <Text style={styles.confirmButtonText}>Save Name</Text>
+                <Text style={styles.confirmButtonText}>{isSubmitting ? "Saving..." : "Save Name"}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1652,10 +1666,11 @@ const handleUnregisterAttendance = async (opportunityId: string) => {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.modalButton, styles.confirmButton]}
+                style={[styles.modalButton, styles.confirmButton, isSubmitting && styles.disabledButton]}
                 onPress={applyHourChange}
+                disabled={isSubmitting}
               >
-                <Text style={styles.confirmButtonText}>Confirm</Text>
+                <Text style={styles.confirmButtonText}>{isSubmitting ? "Updating..." : "Confirm"}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -2264,5 +2279,8 @@ cardHeaderRight: {
   frequencyPillTextSelected: {
     color: COLORS.textLight,
     fontWeight: "600",
+  },
+  disabledButton: {
+    opacity: 0.6,
   },
 });
