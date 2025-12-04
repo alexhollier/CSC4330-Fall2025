@@ -477,6 +477,8 @@ const [editPassword, setEditPassword] = useState('');
 const [editConfirmPassword, setEditConfirmPassword] = useState('');
 const [currentPassword, setCurrentPassword] = useState('');
 
+
+
   const navigation = useNavigation();
 
   const [accountType, setAccountType] = useState<'user' | 'organization'>('user');
@@ -493,6 +495,16 @@ const [currentPassword, setCurrentPassword] = useState('');
   const [favoriteOpportunities, setFavoriteOpportunities] =
     useState<FavoriteOpportunity[]>([]);
   const [loadingFavorites, setLoadingFavorites] = useState(true);
+
+  const [attendees, setAttendees] = useState<{ [key: string]: string[] }>({});
+  const [showAttendeeModal, setShowAttendeeModal] = useState(false);
+  const [selectedOpportunityAttendees, setSelectedOpportunityAttendees] = useState<string[]>([]);
+  const [attendeeDetails, setAttendeeDetails] = useState<Array<{
+    name: string;
+    email: string;
+    phone: string;
+  }>>([]);
+  const [loadingAttendees, setLoadingAttendees] = useState(false);
 
   // organizations from Firestore
   const [organizations, setOrganizations] = useState<Organization[]>([]);
@@ -554,38 +566,38 @@ const handleUnregisterAttendance = async (opportunityId: string) => {
   );
 };
 
-  // Add useEffect to fetch upcoming events user is attending
+// Add useEffect to fetch upcoming events user is attending
   useEffect(() => {
-  if (!user) return;
+    if (!user) return;
 
-  const oppRef = collection(db, 'VolunteerOpportunity');
-  
-  const unsubscribe = onSnapshot(oppRef, (snapshot) => {
-    const events: FavoriteOpportunity[] = [];
+    const oppRef = collection(db, 'VolunteerOpportunity');
     
-    snapshot.docs.forEach((doc) => {
-      const data = doc.data();
-      const attendees = data.attendees || [];
+    const unsubscribe = onSnapshot(oppRef, (snapshot) => {
+      const events: FavoriteOpportunity[] = [];
       
-      if (attendees.includes(user.uid) && data.eventType === 'upcoming') {
-        events.push({
-          id: doc.id,
-          title: data.Business,
-          description: data.Description,
-          email: data.Email,
-          phone: data.Phone,
-          website: data.Website,
-          eventDate: data.eventDate,
-          eventTime: data.eventTime,
-        });
-      }
+      snapshot.docs.forEach((doc) => {
+        const data = doc.data();
+        const attendees = data.attendees || [];
+        
+        if (attendees.includes(user.uid) && data.eventType === 'upcoming') {
+          events.push({
+            id: doc.id,
+            title: data.Business,
+            description: data.Description,
+            email: data.Email,
+            phone: data.Phone,
+            website: data.Website,
+            eventDate: data.eventDate,
+            eventTime: data.eventTime,
+          });
+        }
+      });
+      
+      setUpcomingEvents(events);
     });
-    
-    setUpcomingEvents(events);
-  });
 
-  return () => unsubscribe();
-}, [user]);
+    return () => unsubscribe();
+  }, [user]);
 
   // Check account type and load organization opportunities
   useEffect(() => {
@@ -622,9 +634,15 @@ const handleUnregisterAttendance = async (opportunityId: string) => {
     
     const unsubscribe = onSnapshot(oppRef, (snapshot) => {
       const opportunities: OrganizationOpportunity[] = [];
+      const attendeeData: { [key: string]: string[] } = {};
       
       snapshot.docs.forEach((doc) => {
         const data = doc.data();
+        
+        // Store attendee data for all opportunities
+        if (data.attendees) {
+          attendeeData[doc.id] = data.attendees;
+        }
         
         // Only show opportunities posted by this organization
         if (data.postedBy === user.uid) {
@@ -644,13 +662,13 @@ const handleUnregisterAttendance = async (opportunityId: string) => {
         }
       });
       
+      setAttendees(attendeeData);
       setOrganizationOpportunities(opportunities);
       setLoadingOpportunities(false);
     });
 
     return () => unsubscribe();
   }, [user, accountType]);
-
   // -------------------------
   // FIRESTORE — load user doc
   // -------------------------
@@ -881,6 +899,49 @@ const handleEditProfile = async () => {
     );
   };
 
+  // Fetch attendee details
+  const fetchAttendeeDetails = async (attendeeIds: string[]) => {
+    setLoadingAttendees(true);
+    try {
+      const details = await Promise.all(
+        attendeeIds.map(async (userId) => {
+          const userDocRef = doc(db, 'UserInformation', userId);
+          const userDoc = await getDoc(userDocRef);
+          
+          if (userDoc.exists()) {
+            const data = userDoc.data();
+            return {
+              name: data.accountType === 'user' 
+                ? `${data.firstName} ${data.lastName}`
+                : data.businessName,
+              email: data.email || 'No email provided',
+              phone: data.phoneNumber || 'No phone provided',
+            };
+          }
+          return {
+            name: 'Unknown User',
+            email: 'No email',
+            phone: 'No phone',
+          };
+        })
+      );
+      setAttendeeDetails(details);
+    } catch (error) {
+      console.error('Error fetching attendee details:', error);
+      Alert.alert('Error', 'Failed to load attendee information');
+    } finally {
+      setLoadingAttendees(false);
+    }
+  };
+
+  // Handle view attendees
+  const handleViewAttendees = async (opportunityId: string) => {
+    const attendeeList = attendees[opportunityId] || [];
+    setSelectedOpportunityAttendees(attendeeList);
+    setShowAttendeeModal(true);
+    await fetchAttendeeDetails(attendeeList);
+  };
+
   // Handle edit opportunity - navigate to search screen with edit mode
   const handleEditOpportunity = (opportunity: OrganizationOpportunity) => {
   (navigation as any).navigate('search', { 
@@ -889,170 +950,200 @@ const handleEditProfile = async () => {
 };
 
 
-    // Organization Opportunity Card Component
-  const OrganizationOpportunityCard = ({ 
-    opportunity 
-  }: { 
-    opportunity: OrganizationOpportunity 
-  }) => {
-    const [isExpanded, setIsExpanded] = useState(false);
+ const OrganizationOpportunityCard = ({ 
+  opportunity 
+}: { 
+  opportunity: OrganizationOpportunity 
+}) => {
+  const [isExpanded, setIsExpanded] = useState(false);
 
-    return (
-      <TouchableOpacity
-        style={[
-          styles.orgOpportunityCard,
-          isExpanded && styles.cardExpanded,
-        ]}
-        onPress={() => setIsExpanded(!isExpanded)}
-        activeOpacity={0.85}
-      >
-        <View style={styles.cardHeader}>
-          <View style={styles.cardHeaderLeft}>
-            <View style={styles.iconCircle}>
-              <Logo
-                name="hand-heart"
-                size={24}
-                color={COLORS.darkGreen}
-              />
-            </View>
-
-            <View style={styles.cardHeaderText}>
-              <Text style={styles.cardTitle}>{opportunity.title}</Text>
-              
-              <View style={styles.opportunityMeta}>
-                <Text style={styles.opportunityType}>
-                  {opportunity.eventType === 'upcoming' ? 'Upcoming Event' : 'Ongoing Opportunity'}
-                </Text>
-                
-                <View style={styles.attendeeCount}>
-                  <Logo
-                    name="account-group"
-                    size={14}
-                    color={COLORS.lightGreen}
-                  />
-                  <Text style={styles.attendeeCountText}>
-                    {opportunity.attendeeCount} attending
-                  </Text>
-                </View>
-              </View>
-
-              {/* Date/Time Section */}
-              {opportunity.eventDate && (
-                <View style={styles.dateRow}>
-                  <Logo
-                    name="calendar"
-                    size={14}
-                    color={COLORS.lightGreen}
-                    style={styles.iconTinyMarginRight}
-                  />
-                  <Text style={styles.dateText}>
-                    {opportunity.eventDate}
-                    {opportunity.eventTime ? ` • ${opportunity.eventTime}` : ''}
-                  </Text>
-                </View>
-              )}
-            </View>
-          </View>
-
-          <View style={styles.cardHeaderRight}>
+  return (
+    <TouchableOpacity
+      style={[
+        styles.orgOpportunityCard,
+        isExpanded && styles.cardExpanded,
+      ]}
+      onPress={() => setIsExpanded(!isExpanded)}
+      activeOpacity={0.85}
+    >
+      <View style={styles.cardHeader}>
+        <View style={styles.cardHeaderLeft}>
+          <View style={styles.iconCircle}>
             <Logo
-              name={isExpanded ? "chevron-up" : "chevron-down"}
+              name="hand-heart"
               size={24}
               color={COLORS.darkGreen}
             />
           </View>
-        </View>
 
-        {isExpanded && (
-          <View style={styles.expandedContent}>
-            <View style={styles.divider} />
+          <View style={styles.cardHeaderText}>
+            <Text style={styles.cardTitle}>{opportunity.title}</Text>
+            
+            <View style={styles.opportunityMeta}>
+              <Text style={styles.opportunityType}>
+                {opportunity.eventType === 'upcoming' ? 'Upcoming Event' : 'Ongoing Opportunity'}
+              </Text>
+              
+              <View style={styles.attendeeCount}>
+                <Logo
+                  name="account-group"
+                  size={14}
+                  color={COLORS.lightGreen}
+                />
+                <Text style={styles.attendeeCountText}>
+                  {opportunity.attendeeCount} attending
+                </Text>
+              </View>
+            </View>
 
-            <Text style={styles.descriptionLabel}>About</Text>
-            <Text style={styles.cardDescription}>{opportunity.description}</Text>
-
-            {(opportunity.phone || opportunity.email) && (
-              <View style={styles.contactSection}>
-                <Text style={styles.contactLabel}>Contact Information</Text>
-
-                {opportunity.phone && (
-                  <View style={styles.contactRow}>
-                    <Logo
-                      name="phone"
-                      size={16}
-                      color={COLORS.lightGreen}
-                      style={styles.iconTinyMarginRight}
-                    />
-                    <Text style={styles.contactText}>
-                      {opportunity.phone}
-                    </Text>
-                  </View>
-                )}
-
-                {opportunity.email && (
-                  <View style={styles.contactRow}>
-                    <Logo
-                      name="email"
-                      size={16}
-                      color={COLORS.lightGreen}
-                      style={styles.iconTinyMarginRight}
-                    />
-                    <Text style={styles.contactText}>
-                      {opportunity.email}
-                    </Text>
-                  </View>
-                )}
-
-                {opportunity.website && (
-                  <View style={styles.contactRow}>
-                    <Logo
-                      name="web"
-                      size={16}
-                      color={COLORS.lightGreen}
-                      style={styles.iconTinyMarginRight}
-                    />
-                    <Text style={styles.contactText}>
-                      {opportunity.website}
-                    </Text>
-                  </View>
-                )}
+            {/* Date/Time Section */}
+            {opportunity.eventDate && (
+              <View style={styles.dateRow}>
+                <Logo
+                  name="calendar"
+                  size={14}
+                  color={COLORS.lightGreen}
+                  style={styles.iconTinyMarginRight}
+                />
+                <Text style={styles.dateText}>
+                  {opportunity.eventDate}
+                  {opportunity.eventTime ? ` • ${opportunity.eventTime}` : ''}
+                </Text>
               </View>
             )}
-
-            {/* Edit and Delete Buttons */}
-            <View style={styles.orgOpportunityActions}>
-              <TouchableOpacity
-                style={styles.editOpportunityButton}
-                onPress={() => handleEditOpportunity(opportunity)}
-              >
-                <Logo
-                  name="pencil"
-                  size={18}
-                  color={COLORS.textLight}
-                />
-                <Text style={styles.editOpportunityButtonText}>
-                  Edit
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.deleteOpportunityButton}
-                onPress={() => handleDeleteOpportunity(opportunity.id)}
-              >
-                <Logo
-                  name="delete"
-                  size={18}
-                  color={COLORS.textLight}
-                />
-                <Text style={styles.deleteOpportunityButtonText}>
-                  Delete
-                </Text>
-              </TouchableOpacity>
-            </View>
           </View>
-        )}
-      </TouchableOpacity>
-    );
-  };
+        </View>
+
+        <View style={styles.cardHeaderRight}>
+          <Logo
+            name={isExpanded ? "chevron-up" : "chevron-down"}
+            size={24}
+            color={COLORS.darkGreen}
+          />
+        </View>
+      </View>
+
+      {isExpanded && (
+        <View style={styles.expandedContent}>
+          <View style={styles.divider} />
+
+          <Text style={styles.descriptionLabel}>About</Text>
+          <Text style={styles.cardDescription}>{opportunity.description}</Text>
+
+          {(opportunity.phone || opportunity.email) && (
+            <View style={styles.contactSection}>
+              <Text style={styles.contactLabel}>Contact Information</Text>
+
+              {opportunity.phone && (
+                <View style={styles.contactRow}>
+                  <Logo
+                    name="phone"
+                    size={16}
+                    color={COLORS.lightGreen}
+                    style={styles.iconTinyMarginRight}
+                  />
+                  <Text style={styles.contactText}>
+                    {opportunity.phone}
+                  </Text>
+                </View>
+              )}
+
+              {opportunity.email && (
+                <View style={styles.contactRow}>
+                  <Logo
+                    name="email"
+                    size={16}
+                    color={COLORS.lightGreen}
+                    style={styles.iconTinyMarginRight}
+                  />
+                  <Text style={styles.contactText}>
+                    {opportunity.email}
+                  </Text>
+                </View>
+              )}
+
+              {opportunity.website && (
+                <View style={styles.contactRow}>
+                  <Logo
+                    name="web"
+                    size={16}
+                    color={COLORS.lightGreen}
+                    style={styles.iconTinyMarginRight}
+                  />
+                  <Text style={styles.contactText}>
+                    {opportunity.website}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* Edit and Delete Buttons */}
+          <View style={styles.orgOpportunityActions}>
+            <TouchableOpacity
+              style={styles.editOpportunityButton}
+              onPress={(e) => {
+                e.stopPropagation();
+                handleEditOpportunity(opportunity);
+              }}
+            >
+              <Logo
+                name="pencil"
+                size={18}
+                color={COLORS.textLight}
+              />
+              <Text style={styles.editOpportunityButtonText}>
+                Edit
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.deleteOpportunityButton}
+              onPress={(e) => {
+                e.stopPropagation();
+                handleDeleteOpportunity(opportunity.id);
+              }}
+            >
+              <Logo
+                name="delete"
+                size={18}
+                color={COLORS.textLight}
+              />
+              <Text style={styles.deleteOpportunityButtonText}>
+                Delete
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Attendee Count - Only for upcoming events */}
+          {opportunity.eventType === 'upcoming' && (
+            <TouchableOpacity
+              style={styles.attendeeCountSection}
+              onPress={(e) => {
+                e.stopPropagation();
+                handleViewAttendees(opportunity.id);
+              }}
+            >
+              <Logo
+                name="account-group"
+                size={20}
+                color={COLORS.lightGreen}
+              />
+              <Text style={styles.attendeeCountText}>
+                {opportunity.attendeeCount} {opportunity.attendeeCount === 1 ? 'person' : 'people'} attending
+              </Text>
+              <Logo
+                name="chevron-right"
+                size={20}
+                color={COLORS.lightGreen}
+              />
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+};
   // -------------------------------------------------------
   // FAVORITES
   // -------------------------------------------------------
@@ -2130,6 +2221,107 @@ const handleEditProfile = async () => {
           </View>
         </View>
       </Modal>
+      {/* Attendee List Modal */}
+      <Modal
+        visible={showAttendeeModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowAttendeeModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.attendeeModalContent}>
+            <View style={styles.attendeeModalHeader}>
+              <Text style={styles.attendeeModalTitle}>Registered Attendees</Text>
+              <TouchableOpacity onPress={() => setShowAttendeeModal(false)}>
+                <MaterialIcons name="close" size={24} color={COLORS.textDark} />
+              </TouchableOpacity>
+            </View>
+
+            {loadingAttendees ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={COLORS.darkGreen} />
+                <Text style={styles.loadingText}>Loading attendees...</Text>
+              </View>
+            ) : attendeeDetails.length > 0 ? (
+              <ScrollView style={styles.attendeeList}>
+                {attendeeDetails.map((attendee, index) => (
+                  <View key={index} style={styles.attendeeCard}>
+                    <View style={styles.attendeeIconCircle}>
+                      <MaterialIcons
+                        name="person"
+                        size={24}
+                        color={COLORS.darkGreen}
+                      />
+                    </View>
+                    <View style={styles.attendeeInfo}>
+                      <Text style={styles.attendeeName}>{attendee.name}</Text>
+                      
+                      <TouchableOpacity 
+                        style={styles.attendeeContactRow}
+                        onPress={() => {
+                          if (attendee.email !== 'No email provided') {
+                            Linking.openURL(`mailto:${attendee.email}`);
+                          }
+                        }}
+                      >
+                        <Logo
+                          name="email"
+                          size={14}
+                          color={COLORS.lightGreen}
+                        />
+                        <Text style={[
+                          styles.attendeeContactText,
+                          attendee.email !== 'No email provided' && styles.attendeeContactLink
+                        ]}>
+                          {attendee.email}
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity 
+                        style={styles.attendeeContactRow}
+                        onPress={() => {
+                          if (attendee.phone !== 'No phone provided') {
+                            const cleanedNumber = attendee.phone.replace(/[^\d+]/g, '');
+                            Linking.openURL(`tel:${cleanedNumber}`);
+                          }
+                        }}
+                      >
+                        <Logo
+                          name="phone"
+                          size={14}
+                          color={COLORS.lightGreen}
+                        />
+                        <Text style={[
+                          styles.attendeeContactText,
+                          attendee.phone !== 'No phone provided' && styles.attendeeContactLink
+                        ]}>
+                          {attendee.phone}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+              </ScrollView>
+            ) : (
+              <View style={styles.emptyAttendeeState}>
+                <Logo
+                  name="account-group-outline"
+                  size={64}
+                  color={COLORS.tabInactive}
+                />
+                <Text style={styles.emptyAttendeeText}>No attendees yet</Text>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={styles.closeAttendeeModalButton}
+              onPress={() => setShowAttendeeModal(false)}
+            >
+              <Text style={styles.closeAttendeeModalText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -2139,6 +2331,121 @@ const handleEditProfile = async () => {
 // -------------------------------------------------------
 
 const styles = StyleSheet.create({
+  attendeeCountSection: {
+    marginTop: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    padding: 12,
+    backgroundColor: '#f5f0e8',
+    borderRadius: 10,
+  },
+  attendeeCountText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textDark,
+  },
+  attendeeModalContent: {
+    backgroundColor: COLORS.background,
+    marginHorizontal: 20,
+    marginTop: 60,
+    marginBottom: 60,
+    borderRadius: 14,
+    flex: 1,
+    maxHeight: '85%',
+    width: '90%',
+    alignSelf: 'center',
+  },
+  attendeeModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.tabInactive,
+  },
+  attendeeModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: COLORS.darkGreen,
+  },
+  loadingContainer: {
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: COLORS.textDark,
+  },
+  attendeeList: {
+    flex: 1,
+    padding: 16,
+  },
+  attendeeCard: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.card,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  attendeeIconCircle: {
+    backgroundColor: COLORS.textLight,
+    padding: 10,
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  attendeeInfo: {
+    flex: 1,
+  },
+  attendeeName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.textDark,
+    marginBottom: 8,
+  },
+  attendeeContactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  attendeeContactText: {
+    fontSize: 13,
+    color: COLORS.textDark,
+  },
+  attendeeContactLink: {
+    textDecorationLine: 'underline',
+    color: COLORS.darkGreen,
+  },
+  emptyAttendeeState: {
+    padding: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyAttendeeText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: COLORS.textDark,
+    fontWeight: '600',
+  },
+  closeAttendeeModalButton: {
+    backgroundColor: COLORS.darkGreen,
+    padding: 16,
+    margin: 16,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  closeAttendeeModalText: {
+    color: COLORS.textLight,
+    fontSize: 16,
+    fontWeight: '700',
+  },
 modalContentFixed: {
   backgroundColor: COLORS.background,
   borderRadius: 16,
@@ -2284,13 +2591,7 @@ editProfileButtonText: {
     alignItems: 'center',
     gap: 4,
   },
-
-  attendeeCountText: {
-    fontSize: 12,
-    color: COLORS.lightGreen,
-    fontWeight: '600',
-  },
-
+  
   orgOpportunityActions: {
     flexDirection: 'row',
     justifyContent: 'space-between',

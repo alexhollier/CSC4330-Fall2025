@@ -27,13 +27,13 @@ import { useNavigation } from '@react-navigation/native';
 
 
 const COLORS = {
-  background: '#f5f3eb',      // Soft warm off-white
-  darkGreen: '#4d7c0f',       // Deep olive green
-  lightGreen: '#709d43',      // Medium sage green
-  card: '#e8dcc8',            // Warm beige for cards
-  textDark: '#2d4a0a',        // Darker green for better text contrast
+  background: '#f5f3eb',
+  darkGreen: '#4d7c0f',
+  lightGreen: '#709d43',
+  card: '#e8dcc8',
+  textDark: '#2d4a0a',
   textLight: '#ffffff',
-  timeFilter: '#c9d1b8',      // Soft green-grey for slider
+  timeFilter: '#c9d1b8',
 };
 
 export type Opportunity = {
