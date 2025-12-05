@@ -87,16 +87,19 @@ export default function SignInScreen() {
           <TextInput
             style={styles.input}
             placeholder="Email"
+            placeholderTextColor={"#777"}
             autoCapitalize="none"
             keyboardType="email-address"
             value={email}
             onChangeText={setEmail}
             editable={!loading}
+
           />
 
           <TextInput
             style={styles.input}
             placeholder="Password"
+            placeholderTextColor={"#777"}
             secureTextEntry
             value={password}
             onChangeText={setPassword}

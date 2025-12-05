@@ -220,32 +220,72 @@ interface SignUpModalProps {
 }
 
 function SignUpModal({ visible, onClose, onBackToLogin }: SignUpModalProps) {
-  const [signUpEmail, setSignUpEmail] = useState('');
-  const [signUpPassword, setSignUpPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [accountType, setAccountType] = useState<'user' | 'organization'>('user');
   const [loading, setLoading] = useState(false);
 
-  const handleCreateAccount = async () => {
-    if (!signUpEmail || !signUpPassword || !confirmPassword) {
-      Alert.alert('Error', 'Please fill in all fields');
-      return;
+  // Common fields
+  const [signUpEmail, setSignUpEmail] = useState('');
+  const [signUpPassword, setSignUpPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
+
+  // User-specific fields
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+
+  // Organization-specific fields
+  const [businessName, setBusinessName] = useState('');
+  const [contactFirstName, setContactFirstName] = useState('');
+  const [contactLastName, setContactLastName] = useState('');
+  const [website, setWebsite] = useState('');
+
+  const validateFields = () => {
+    if (!signUpEmail || !signUpPassword || !confirmPassword || !phoneNumber) {
+      Alert.alert('Error', 'Please fill in all required fields');
+      return false;
+    }
+
+    if (accountType === 'user') {
+      if (!firstName || !lastName) {
+        Alert.alert('Error', 'Please enter your first and last name');
+        return false;
+      }
+    } else {
+      if (!businessName || !contactFirstName || !contactLastName || !website) {
+        Alert.alert('Error', 'Please fill in all business information');
+        return false;
+      }
     }
 
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(signUpEmail)) {
       Alert.alert('Error', 'Please enter a valid email address');
-      return;
+      return false;
     }
 
     if (signUpPassword !== confirmPassword) {
       Alert.alert('Error', 'Passwords do not match');
-      return;
+      return false;
     }
 
     if (signUpPassword.length < 6) {
       Alert.alert('Error', 'Password must be at least 6 characters');
+      return false;
+    }
+
+    // Validate phone number (basic validation)
+    const phoneRegex = /^[\d\s\-\(\)\+]+$/;
+    if (!phoneRegex.test(phoneNumber)) {
+      Alert.alert('Error', 'Please enter a valid phone number');
+      return false;
+    }
+
+    return true;
+  };
+
+  const handleCreateAccount = async () => {
+    if (!validateFields()) {
       return;
     }
 
@@ -253,12 +293,26 @@ function SignUpModal({ visible, onClose, onBackToLogin }: SignUpModalProps) {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, signUpEmail, signUpPassword);
       
-      // Store account type in Firestore
-      await setDoc(doc(db, 'UserInformation', userCredential.user.uid), {
+      // Prepare user data based on account type
+      const userData: any = {
         email: signUpEmail,
         accountType: accountType,
+        phoneNumber: phoneNumber,
         createdAt: new Date().toISOString(),
-      });
+      };
+
+      if (accountType === 'user') {
+        userData.firstName = firstName;
+        userData.lastName = lastName;
+      } else {
+        userData.businessName = businessName;
+        userData.contactFirstName = contactFirstName;
+        userData.contactLastName = contactLastName;
+        userData.website = website;
+      }
+      
+      // Store account type in Firestore
+      await setDoc(doc(db, 'UserInformation', userCredential.user.uid), userData);
       
       // Send verification email
       await sendEmailVerification(userCredential.user);
@@ -270,9 +324,17 @@ function SignUpModal({ visible, onClose, onBackToLogin }: SignUpModalProps) {
           {
             text: 'OK',
             onPress: () => {
+              // Reset all fields
               setSignUpEmail('');
               setSignUpPassword('');
               setConfirmPassword('');
+              setPhoneNumber('');
+              setFirstName('');
+              setLastName('');
+              setBusinessName('');
+              setContactFirstName('');
+              setContactLastName('');
+              setWebsite('');
               setAccountType('user');
               onClose();
             },
@@ -348,6 +410,73 @@ function SignUpModal({ visible, onClose, onBackToLogin }: SignUpModalProps) {
                     ]}>Organization</Text>
                   </TouchableOpacity>
                 </View>
+
+                {/* Conditional Fields Based on Account Type */}
+                {accountType === 'user' ? (
+                  <>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="First Name"
+                      value={firstName}
+                      onChangeText={setFirstName}
+                      editable={!loading}
+                    />
+
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Last Name"
+                      value={lastName}
+                      onChangeText={setLastName}
+                      editable={!loading}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Business Name"
+                      value={businessName}
+                      onChangeText={setBusinessName}
+                      editable={!loading}
+                    />
+
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Contact First Name"
+                      value={contactFirstName}
+                      onChangeText={setContactFirstName}
+                      editable={!loading}
+                    />
+
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Contact Last Name"
+                      value={contactLastName}
+                      onChangeText={setContactLastName}
+                      editable={!loading}
+                    />
+
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Website"
+                      autoCapitalize="none"
+                      keyboardType="url"
+                      value={website}
+                      onChangeText={setWebsite}
+                      editable={!loading}
+                    />
+                  </>
+                )}
+
+                {/* Common Fields */}
+                <TextInput
+                  style={styles.input}
+                  placeholder="Phone Number"
+                  keyboardType="phone-pad"
+                  value={phoneNumber}
+                  onChangeText={setPhoneNumber}
+                  editable={!loading}
+                />
 
                 <TextInput
                   style={styles.input}

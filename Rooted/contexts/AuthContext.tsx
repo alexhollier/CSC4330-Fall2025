@@ -8,6 +8,7 @@ interface UserData {
   uid: string;
   email: string | null;
   accountType: 'user' | 'organization';
+  isApproved?: boolean;
 }
 
 interface AuthContextType {
@@ -15,6 +16,7 @@ interface AuthContextType {
   userData: UserData | null;
   loading: boolean;
   isOrganization: boolean;
+  isApprovedOrganization: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -85,11 +87,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const isOrganization = userData?.accountType === 'organization';
+  const isApprovedOrganization = isOrganization && (userData?.isApproved === true); // Add this line
 
   return (
-    <AuthContext.Provider value={{ user, userData, loading, isOrganization }}>
-      {children}
-    </AuthContext.Provider>
+    <AuthContext.Provider value={{ user, userData, loading, isOrganization, isApprovedOrganization }}>
+    {children}
+  </AuthContext.Provider>
   );
 }
 
